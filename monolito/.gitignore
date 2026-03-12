@@ -1,33 +1,36 @@
-HELP.md
+# ── Compilación Java/Maven ───────────────────────────
 target/
-.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
+*.class
+*.jar
+*.war
+*.ear
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-
-### IntelliJ IDEA ###
-.idea
-*.iws
+# ── IDE ───────────────────────────────────────────────
+.idea/
 *.iml
-*.ipr
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
 .vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ── Spring Boot ───────────────────────────────────────
+application-local.properties
+application-prod.properties
+*.env
+.env
+
+# ── Archivos subidos por usuarios ─────────────────────
+uploads/
+
+# ── Logs ──────────────────────────────────────────────
+logs/
+*.log
+
+# ── Sistema operativo ─────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────
+# (NO ignorar docker-compose.yml, solo datos locales)
+postgres_data/
