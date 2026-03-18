@@ -10,7 +10,7 @@ services:
     environment:
       POSTGRES_DB: groupsapp
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: tu_password     # ← Cambia esto
+      POSTGRES_PASSWORD: groupsapp1234
     ports:
       - "5432:5432"
     volumes:
@@ -26,9 +26,9 @@ services:
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@groupsapp.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_DEFAULT_PASSWORD: admin#123
     ports:
-      - "5050:80"                        # Abrir en: http://localhost:5050
+      - "5051:80"                        # Abrir en: http://localhost:5051
     depends_on:
       - postgres
     networks:
