@@ -22,11 +22,11 @@ public class MessageService {
     private final FileMetadataRepository fileRepository;
 
     public MessageService(MessageRepository messageRepository,
-                          MessageStatusRepository messageStatusRepository,
-                          UserRepository userRepository,
-                          ChannelRepository channelRepository,
-                          GroupMemberRepository groupMemberRepository,
-                          FileMetadataRepository fileRepository) {
+                            MessageStatusRepository messageStatusRepository,
+                            UserRepository userRepository,
+                            ChannelRepository channelRepository,
+                            GroupMemberRepository groupMemberRepository,
+                            FileMetadataRepository fileRepository) {
         this.messageRepository       = messageRepository;
         this.messageStatusRepository = messageStatusRepository;
         this.userRepository          = userRepository;
@@ -75,6 +75,7 @@ public class MessageService {
         return MessageDTO.fromEntity(saved, sender.getId());
     }
 
+    @Transactional
     public List<MessageDTO> getChannelHistory(Long channelId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));

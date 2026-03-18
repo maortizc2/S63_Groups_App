@@ -4,7 +4,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -14,20 +13,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-// Este filtro se ejecuta UNA VEZ por cada request que llega al servidor
-// Su trabajo: leer el token JWT del header y autenticar al usuario
 @Component
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserDetailsServiceImpl userDetailsService;
 
-     // Constructor
     public JwtFilter(JwtUtil jwtUtil, UserDetailsServiceImpl userDetailsService) {
-        this.jwtUtil             = jwtUtil;
-        this.userDetailsService  = userDetailsService;
+        this.jwtUtil            = jwtUtil;
+        this.userDetailsService = userDetailsService;
     }
-    
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
@@ -35,50 +31,45 @@ public class JwtFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        // 1. Leer el header Authorization
         String authHeader = request.getHeader("Authorization");
 
-        // 2. Verificar que tenga el formato "Bearer eyJ..."
+        // ── LOG DE DIAGNÓSTICO ────────────────────────
+        System.out.println("=== JwtFilter ===");
+        System.out.println("URL: " + request.getRequestURI());
+        System.out.println("Authorization header: " + authHeader);
+        // ─────────────────────────────────────────────
+
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response); // Pasar sin autenticar
+            System.out.println("❌ No hay token o formato incorrecto");
+            filterChain.doFilter(request, response);
             return;
         }
 
-        // 3. Extraer solo el token (quitar el "Bearer ")
         String token = authHeader.substring(7);
+        System.out.println("Token extraído: " + token.substring(0, 20) + "...");
 
-        // 4. Validar el token
         if (!jwtUtil.validateToken(token)) {
-            filterChain.doFilter(request, response); // Token inválido, pasar sin autenticar
+            System.out.println("❌ Token inválido o expirado");
+            filterChain.doFilter(request, response);
             return;
         }
 
-        // 5. Extraer el email del token
         String email = jwtUtil.getEmailFromToken(token);
+        System.out.println("✅ Email del token: " + email);
 
-        // 6. Solo autenticar si no hay sesión activa ya
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-
-            // 7. Cargar el usuario desde la BD
             UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-
-            // 8. Crear objeto de autenticación y guardarlo en el contexto de Spring
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(
-                            userDetails,
-                            null,                           // sin credenciales (ya validamos con JWT)
-                            userDetails.getAuthorities()
+                            userDetails, null, userDetails.getAuthorities()
                     );
-
             authentication.setDetails(
                     new WebAuthenticationDetailsSource().buildDetails(request)
             );
-
-            // 9. Decirle a Spring "este usuario está autenticado"
             SecurityContextHolder.getContext().setAuthentication(authentication);
+            System.out.println("✅ Usuario autenticado: " + email);
         }
 
-        // 10. Continuar con el siguiente filtro o el controller
         filterChain.doFilter(request, response);
     }
 }

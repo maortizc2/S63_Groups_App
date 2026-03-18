@@ -1,9 +1,7 @@
 package com.groupsapp.monolito.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -42,10 +40,12 @@ public class Group {
     private User owner;
 
     // Miembros del grupo
+    @JsonIgnore
     @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private Set<GroupMember> members = new HashSet<>();
 
     // Canales dentro del grupo
+    @JsonIgnore
     @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private Set<Channel> channels = new HashSet<>();
 

@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 @Entity
 @Table(name = "users")
 public class User {
@@ -37,6 +39,7 @@ public class User {
 
     // ── Relaciones ────────────────────────────────────
     // Un usuario puede pertenecer a muchos grupos
+    @JsonIgnore
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private Set<GroupMember> groupMemberships = new HashSet<>();
 

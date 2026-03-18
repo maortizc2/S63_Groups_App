@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 @Entity
 @Table(name = "channels")
 public class Channel {
@@ -28,11 +30,13 @@ public class Channel {
 
     // ── Relaciones ────────────────────────────────────
     // A qué grupo pertenece este canal
+    @JsonIgnore // Esto le dice a Jackson "no intentes serializar esta relación a JSON" — el cliente no necesita ver el grupo completo dentro de cada canal porque ya sabe a qué grupo pertenece.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_id", nullable = false)
     private Group group;
 
     // Mensajes enviados en este canal
+    @JsonIgnore
     @OneToMany(mappedBy = "channel", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @OrderBy("createdAt ASC")                       // Historial ordenado por tiempo
     private List<Message> messages = new ArrayList<>();

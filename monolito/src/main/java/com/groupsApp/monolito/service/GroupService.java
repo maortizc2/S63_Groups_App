@@ -91,6 +91,7 @@ public class GroupService {
         groupMemberRepository.delete(member);
     }
 
+    @Transactional(readOnly = true)
     public List<GroupDTO> getMyGroups(String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
