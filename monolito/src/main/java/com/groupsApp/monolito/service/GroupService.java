@@ -100,6 +100,7 @@ public class GroupService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public List<GroupDTO> searchGroups(String name) {
         return groupRepository.findByNameContainingIgnoreCase(name).stream()
                 .filter(g -> g.getType() != Group.GroupType.PRIVATE)
@@ -107,6 +108,7 @@ public class GroupService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public GroupDTO getGroupById(Long groupId, String userEmail) {
         Group group = groupRepository.findById(groupId)
                 .orElseThrow(() -> new RuntimeException("Grupo no encontrado"));
