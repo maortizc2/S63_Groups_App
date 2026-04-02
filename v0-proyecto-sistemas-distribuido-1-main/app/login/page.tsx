@@ -6,11 +6,14 @@ import { Eye, EyeOff, MessageCircle, Mail, User, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { login, register } from "@/lib/services/auth.service"
 
 export default function LoginPage() {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     username: "",
     email: "",
@@ -48,11 +51,29 @@ export default function LoginPage() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (validateForm()) {
-      // Here you would typically make an API call to authenticate
+    setServerError(null)
+
+    if (!validateForm()) return
+
+    setIsLoading(true)
+    try {
+      if (isLogin) {
+        await login({ email: formData.email, password: formData.password })
+      } else {
+        await register({
+          username: formData.username,
+          email: formData.email,
+          password: formData.password,
+        })
+      }
       router.push("/")
+    } catch (error) {
+      // Muestra el mensaje de error que viene del backend
+      setServerError(error instanceof Error ? error.message : "Something went wrong")
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -88,7 +109,15 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Username - only for registration */}
+
+              {/* Error del servidor */}
+              {serverError && (
+                <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {serverError}
+                </div>
+              )}
+
+              {/* Username - solo para registro */}
               {!isLogin && (
                 <div className="space-y-2">
                   <label htmlFor="username" className="text-sm font-medium text-foreground">
@@ -152,11 +181,7 @@ export default function LoginPage() {
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
                 {errors.password && (
@@ -164,7 +189,7 @@ export default function LoginPage() {
                 )}
               </div>
 
-              {/* Confirm Password - only for registration */}
+              {/* Confirm Password - solo para registro */}
               {!isLogin && (
                 <div className="space-y-2">
                   <label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">
@@ -187,35 +212,31 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Forgot password link - only for login */}
+              {/* Forgot password - solo para login */}
               {isLogin && (
                 <div className="text-right">
-                  <button
-                    type="button"
-                    className="text-sm text-primary hover:underline"
-                  >
+                  <button type="button" className="text-sm text-primary hover:underline">
                     Forgot password?
                   </button>
                 </div>
               )}
 
-              {/* Submit button */}
-              <Button type="submit" className="w-full">
-                {isLogin ? "Sign In" : "Create Account"}
+              {/* Submit */}
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading
+                  ? isLogin ? "Signing in..." : "Creating account..."
+                  : isLogin ? "Sign In" : "Create Account"}
               </Button>
             </form>
 
-            {/* Toggle between login and register */}
+            {/* Toggle login/register */}
             <div className="mt-6 text-center text-sm text-muted-foreground">
               {isLogin ? (
                 <>
                   {"Don't have an account? "}
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsLogin(false)
-                      setErrors({})
-                    }}
+                    onClick={() => { setIsLogin(false); setErrors({}); setServerError(null) }}
                     className="font-medium text-primary hover:underline"
                   >
                     Sign up
@@ -226,10 +247,7 @@ export default function LoginPage() {
                   Already have an account?{" "}
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsLogin(true)
-                      setErrors({})
-                    }}
+                    onClick={() => { setIsLogin(true); setErrors({}); setServerError(null) }}
                     className="font-medium text-primary hover:underline"
                   >
                     Sign in
