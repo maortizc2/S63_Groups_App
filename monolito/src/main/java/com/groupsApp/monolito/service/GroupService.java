@@ -2,6 +2,8 @@ package com.groupsapp.monolito.service;
 
 import com.groupsapp.monolito.dto.group.CreateGroupRequest;
 import com.groupsapp.monolito.dto.group.GroupDTO;
+import com.groupsapp.monolito.dto.group.MemberDTO;
+import com.groupsapp.monolito.dto.group.UserSearchDTO;
 import com.groupsapp.monolito.model.Channel;
 import com.groupsapp.monolito.model.Group;
 import com.groupsapp.monolito.model.GroupMember;
@@ -19,10 +21,10 @@ import java.util.stream.Collectors;
 @Service
 public class GroupService {
 
-    private final GroupRepository groupRepository;
+    private final GroupRepository       groupRepository;
     private final GroupMemberRepository groupMemberRepository;
-    private final ChannelRepository channelRepository;
-    private final UserRepository userRepository;
+    private final ChannelRepository     channelRepository;
+    private final UserRepository        userRepository;
 
     public GroupService(GroupRepository groupRepository,
                         GroupMemberRepository groupMemberRepository,
@@ -36,8 +38,7 @@ public class GroupService {
 
     @Transactional
     public GroupDTO createGroup(CreateGroupRequest request, String ownerEmail) {
-        User owner = userRepository.findByEmail(ownerEmail)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        User owner = findUserByEmail(ownerEmail);
         Group group = new Group();
         group.setName(request.getName());
         group.setDescription(request.getDescription());
@@ -57,20 +58,17 @@ public class GroupService {
         general.setGroup(saved);
         channelRepository.save(general);
 
-        long count = groupMemberRepository.countByGroup(saved);
-        return GroupDTO.fromEntity(saved, count);
+        return GroupDTO.fromEntity(saved, groupMemberRepository.countByGroup(saved));
     }
 
     @Transactional
     public void joinGroup(Long groupId, String userEmail) {
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new RuntimeException("Grupo no encontrado"));
+        User user = findUserByEmail(userEmail);
+        Group group = findGroup(groupId);
         if (groupMemberRepository.existsByUserAndGroup(user, group))
             throw new RuntimeException("Ya eres miembro de este grupo");
         if (group.getType() == Group.GroupType.PRIVATE)
-            throw new RuntimeException("Este grupo es privado, necesitas invitación");
+            throw new RuntimeException("Este grupo es privado, necesitas invitacion");
         GroupMember member = new GroupMember();
         member.setUser(user);
         member.setGroup(group);
@@ -79,11 +77,30 @@ public class GroupService {
     }
 
     @Transactional
+    public MemberDTO addMember(Long groupId, String targetUsername, String requesterEmail) {
+        User requester = findUserByEmail(requesterEmail);
+        Group group = findGroup(groupId);
+        GroupMember requesterMembership = groupMemberRepository
+                .findByUserAndGroup(requester, group)
+                .orElseThrow(() -> new RuntimeException("No eres miembro de este grupo"));
+        if (requesterMembership.getRole() == GroupMember.MemberRole.MEMBER)
+            throw new RuntimeException("Solo admins y el owner pueden aniadir miembros");
+        User target = userRepository.findByUsername(targetUsername)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + targetUsername));
+        if (groupMemberRepository.existsByUserAndGroup(target, group))
+            throw new RuntimeException("El usuario ya es miembro del grupo");
+        GroupMember newMember = new GroupMember();
+        newMember.setUser(target);
+        newMember.setGroup(group);
+        newMember.setRole(GroupMember.MemberRole.MEMBER);
+        groupMemberRepository.save(newMember);
+        return MemberDTO.fromEntity(newMember);
+    }
+
+    @Transactional
     public void leaveGroup(Long groupId, String userEmail) {
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new RuntimeException("Grupo no encontrado"));
+        User user = findUserByEmail(userEmail);
+        Group group = findGroup(groupId);
         GroupMember member = groupMemberRepository.findByUserAndGroup(user, group)
                 .orElseThrow(() -> new RuntimeException("No eres miembro de este grupo"));
         if (member.getRole() == GroupMember.MemberRole.OWNER)
@@ -93,10 +110,10 @@ public class GroupService {
 
     @Transactional(readOnly = true)
     public List<GroupDTO> getMyGroups(String userEmail) {
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        User user = findUserByEmail(userEmail);
         return groupMemberRepository.findByUser(user).stream()
-                .map(m -> GroupDTO.fromEntity(m.getGroup(), groupMemberRepository.countByGroup(m.getGroup())))
+                .map(m -> GroupDTO.fromEntity(m.getGroup(),
+                        groupMemberRepository.countByGroup(m.getGroup())))
                 .collect(Collectors.toList());
     }
 
@@ -110,12 +127,38 @@ public class GroupService {
 
     @Transactional(readOnly = true)
     public GroupDTO getGroupById(Long groupId, String userEmail) {
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new RuntimeException("Grupo no encontrado"));
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        Group group = findGroup(groupId);
+        User user = findUserByEmail(userEmail);
         if (!groupMemberRepository.existsByUserAndGroup(user, group))
             throw new RuntimeException("No tienes acceso a este grupo");
         return GroupDTO.fromEntity(group, groupMemberRepository.countByGroup(group));
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemberDTO> getMembers(Long groupId, String requesterEmail) {
+        Group group = findGroup(groupId);
+        User requester = findUserByEmail(requesterEmail);
+        if (!groupMemberRepository.existsByUserAndGroup(requester, group))
+            throw new RuntimeException("No tienes acceso a este grupo");
+        return groupMemberRepository.findByGroup(group).stream()
+                .map(MemberDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserSearchDTO> searchUsers(String query) {
+        return userRepository.searchByUsernameOrEmail(query).stream()
+                .map(UserSearchDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    private User findUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+    }
+
+    private Group findGroup(Long id) {
+        return groupRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Grupo no encontrado"));
     }
 }

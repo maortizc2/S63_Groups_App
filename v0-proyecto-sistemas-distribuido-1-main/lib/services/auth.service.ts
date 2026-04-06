@@ -1,12 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 //  Auth Service — GroupsApp
-//  Encapsula todas las llamadas al backend relacionadas con
-//  autenticación: register, login, logout.
 // ─────────────────────────────────────────────────────────────
 
-import { apiRequest, setToken, removeToken } from "@/lib/api"
-
-// ── Tipos que espera el backend ───────────────────────────────
+import { apiRequest, setToken, removeToken, saveUser } from "@/lib/api"
 
 export interface RegisterRequest {
   username: string
@@ -19,24 +15,22 @@ export interface LoginRequest {
   password: string
 }
 
-// ── Tipo que devuelve el backend en data ──────────────────────
-
 export interface AuthResponse {
   token: string
-  id: number
+  type: string
+  userId: number
   username: string
   email: string
 }
-
-// ── Funciones del servicio ────────────────────────────────────
 
 export async function register(data: RegisterRequest): Promise<AuthResponse> {
   const response = await apiRequest<AuthResponse>("/auth/register", {
     method: "POST",
     body: data,
-    requiresAuth: false,   // No necesita token — el usuario aún no está logueado
+    requiresAuth: false,
   })
-  setToken(response.token) // Guarda el token automáticamente al registrarse
+  setToken(response.token)
+  saveUser({ userId: response.userId, username: response.username, email: response.email })
   return response
 }
 
@@ -44,16 +38,20 @@ export async function login(data: LoginRequest): Promise<AuthResponse> {
   const response = await apiRequest<AuthResponse>("/auth/login", {
     method: "POST",
     body: data,
-    requiresAuth: false,   // No necesita token — el usuario aún no está logueado
+    requiresAuth: false,
   })
-  setToken(response.token) // Guarda el token automáticamente al loguearse
+  setToken(response.token)
+  saveUser({ userId: response.userId, username: response.username, email: response.email })
   return response
 }
 
 export async function logout(): Promise<void> {
-  await apiRequest<void>("/auth/logout", {
-    method: "POST",
-    requiresAuth: true,
-  })
-  removeToken() // Elimina el token local al cerrar sesión
+  try {
+    await apiRequest<void>("/auth/logout", {
+      method: "POST",
+      requiresAuth: true,
+    })
+  } finally {
+    removeToken()
+  }
 }
