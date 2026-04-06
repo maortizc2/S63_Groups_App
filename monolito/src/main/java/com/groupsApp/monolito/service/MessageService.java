@@ -75,7 +75,7 @@ public class MessageService {
         return MessageDTO.fromEntity(saved, sender.getId());
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public List<MessageDTO> getChannelHistory(Long channelId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
@@ -89,6 +89,8 @@ public class MessageService {
                 .collect(Collectors.toList());
     }
 
+    // ── @Transactional añadido: MessageDTO.fromEntity accede a relaciones lazy
+    @Transactional(readOnly = true)
     public List<MessageDTO> getDirectHistory(Long otherUserId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
@@ -99,12 +101,15 @@ public class MessageService {
                 .collect(Collectors.toList());
     }
 
+    // ── @Transactional añadido: accede a relaciones lazy en countUnreadMessages
+    @Transactional(readOnly = true)
     public long getUnreadCount(Long channelId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         return messageRepository.countUnreadMessages(channelId, user.getId());
     }
 
+    @Transactional
     private void createMessageStatus(Message message) {
         if (message.getChannel() != null) {
             groupMemberRepository.findByGroup(message.getChannel().getGroup()).stream()

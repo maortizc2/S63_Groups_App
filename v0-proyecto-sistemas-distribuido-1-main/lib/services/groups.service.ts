@@ -77,8 +77,10 @@ export async function addGroupMember(groupId: number, username: string): Promise
   })
 }
 
-// ── Búsqueda de usuarios (para DMs y para añadir al grupo) ───
+// ── Búsqueda de usuarios ──────────────────────────────────────
+// Ruta: GET /api/groups/search/users?q=
+// (evita colisión con /{id} en Spring MVC)
 
 export async function searchUsers(q: string): Promise<UserSearchDTO[]> {
-  return apiRequest<UserSearchDTO[]>(`/groups/users/search?q=${encodeURIComponent(q)}`)
+  return apiRequest<UserSearchDTO[]>(`/groups/search/users?q=${encodeURIComponent(q)}`)
 }

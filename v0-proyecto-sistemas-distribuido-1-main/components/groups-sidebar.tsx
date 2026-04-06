@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-//  Groups Sidebar — con modal para crear grupo
+//  Groups Sidebar — con modal para crear grupo y usuario actual
 // ─────────────────────────────────────────────────────────────
 "use client"
 
@@ -8,6 +8,7 @@ import { Plus, Settings, MessageCircle, LogOut, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import type { Group } from "@/app/page"
+import { useCurrentUser } from "@/hooks/use-current-user"
 import { getMyGroups, createGroup, type GroupDTO } from "@/lib/services/groups.service"
 import { logout } from "@/lib/services/auth.service"
 import {
@@ -25,41 +26,34 @@ interface GroupsSidebarProps {
 
 function toUiGroup(g: GroupDTO): Group {
   const words = g.name.trim().split(" ")
-  const avatar =
-    words.length >= 2
-      ? (words[0][0] + words[1][0]).toUpperCase()
-      : g.name.substring(0, 2).toUpperCase()
+  const avatar = words.length >= 2
+    ? (words[0][0] + words[1][0]).toUpperCase()
+    : g.name.substring(0, 2).toUpperCase()
   return { id: String(g.id), name: g.name, avatar, unread: 0 }
 }
 
 // ── Modal crear grupo ─────────────────────────────────────────
-function CreateGroupModal({
-  onClose,
-  onCreated,
-}: {
+function CreateGroupModal({ onClose, onCreated }: {
   onClose: () => void
   onCreated: (group: Group) => void
 }) {
-  const [name, setName] = useState("")
+  const [name, setName]               = useState("")
   const [description, setDescription] = useState("")
-  const [type, setType] = useState<"PUBLIC" | "PRIVATE">("PUBLIC")
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [type, setType]               = useState<"PUBLIC" | "PRIVATE">("PUBLIC")
+  const [loading, setLoading]         = useState(false)
+  const [error, setError]             = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
       const created = await createGroup({ name: name.trim(), description: description.trim(), type })
       onCreated(toUiGroup(created))
       onClose()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al crear el grupo")
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   return (
@@ -71,74 +65,42 @@ function CreateGroupModal({
             <X className="h-5 w-5" />
           </button>
         </div>
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-foreground">
               Nombre <span className="text-destructive">*</span>
             </label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Backend Team"
-              required
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+            <input value={name} onChange={e => setName(e.target.value)}
+              placeholder="Ej: Backend Team" required
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
-
           <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">
-              Descripción
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="¿De qué trata este grupo?"
-              rows={3}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-            />
+            <label className="mb-1 block text-sm font-medium text-foreground">Descripción</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)}
+              placeholder="¿De qué trata este grupo?" rows={3}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
           </div>
-
           <div>
             <label className="mb-1 block text-sm font-medium text-foreground">Tipo</label>
             <div className="flex gap-3">
-              {(["PUBLIC", "PRIVATE"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setType(t)}
-                  className={cn(
-                    "flex-1 rounded-lg border py-2 text-sm font-medium transition-colors",
-                    type === t
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background text-muted-foreground hover:border-primary"
-                  )}
-                >
+              {(["PUBLIC", "PRIVATE"] as const).map(t => (
+                <button key={t} type="button" onClick={() => setType(t)}
+                  className={cn("flex-1 rounded-lg border py-2 text-sm font-medium transition-colors",
+                    type === t ? "border-primary bg-primary text-primary-foreground"
+                               : "border-border bg-background text-muted-foreground hover:border-primary")}>
                   {t === "PUBLIC" ? "🌐 Público" : "🔒 Privado"}
                 </button>
               ))}
             </div>
           </div>
-
-          {error && (
-            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          )}
-
+          {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
           <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-lg border border-border py-2 text-sm font-medium text-muted-foreground hover:bg-muted"
-            >
+            <button type="button" onClick={onClose}
+              className="flex-1 rounded-lg border border-border py-2 text-sm font-medium text-muted-foreground hover:bg-muted">
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={loading || !name.trim()}
-              className="flex-1 rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
+            <button type="submit" disabled={loading || !name.trim()}
+              className="flex-1 rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
               {loading ? "Creando..." : "Crear grupo"}
             </button>
           </div>
@@ -150,20 +112,24 @@ function CreateGroupModal({
 
 // ── Sidebar principal ─────────────────────────────────────────
 export function GroupsSidebar({ selectedGroup, onSelectGroup }: GroupsSidebarProps) {
-  const [groups, setGroups] = useState<Group[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [groups,    setGroups]    = useState<Group[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
+
+  // Hook que lee localStorage solo en el cliente → sin hydration mismatch
+  const currentUser = useCurrentUser()
+  const initials    = currentUser?.username?.substring(0, 2).toUpperCase() ?? ""
 
   useEffect(() => {
     getMyGroups()
-      .then((data) => setGroups(data.map(toUiGroup)))
+      .then(data => setGroups(data.map(toUiGroup)))
       .catch(() => setError("Error cargando grupos"))
       .finally(() => setLoading(false))
   }, [])
 
   const handleCreated = (group: Group) => {
-    setGroups((prev) => [...prev, group])
+    setGroups(prev => [...prev, group])
     onSelectGroup(group)
   }
 
@@ -174,54 +140,61 @@ export function GroupsSidebar({ selectedGroup, onSelectGroup }: GroupsSidebarPro
 
   return (
     <>
-      {showModal && (
-        <CreateGroupModal onClose={() => setShowModal(false)} onCreated={handleCreated} />
-      )}
+      {showModal && <CreateGroupModal onClose={() => setShowModal(false)} onCreated={handleCreated} />}
 
       <div className="flex w-[72px] flex-col items-center gap-2 bg-sidebar py-3">
-        {/* Direct Messages */}
+
+        {/* Usuario actual — visible solo tras montaje en cliente */}
         <TooltipProvider delayDuration={0}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Link
-                href="/messages"
-                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground transition-all hover:rounded-xl hover:bg-accent"
-              >
-                <MessageCircle className="h-6 w-6" />
-              </Link>
+              <div className="relative flex h-12 w-12 items-center justify-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground ring-2 ring-primary/30">
+                  {/* initials vacío en SSR, se rellena en cliente sin mismatch */}
+                  {initials}
+                </div>
+                <span className="absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full border-2 border-sidebar bg-green-500" />
+              </div>
             </TooltipTrigger>
             <TooltipContent side="right" className="bg-card text-card-foreground border-border">
-              <p>Direct Messages</p>
+              <p className="font-medium">{currentUser?.username ?? "Cargando..."}</p>
+              <p className="text-xs text-muted-foreground">{currentUser?.email ?? ""}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
 
         <div className="mx-3 h-0.5 w-8 rounded-full bg-sidebar-border" />
 
-        {/* Groups list */}
+        {/* Direct Messages */}
+        <TooltipProvider delayDuration={0}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link href="/messages"
+                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/20 text-primary transition-all hover:rounded-xl hover:bg-primary hover:text-primary-foreground">
+                <MessageCircle className="h-6 w-6" />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="bg-card text-card-foreground border-border">
+              <p>Mensajes directos</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <div className="mx-3 h-0.5 w-8 rounded-full bg-sidebar-border" />
+
+        {/* Lista de grupos */}
         <div className="flex flex-1 flex-col items-center gap-2 overflow-y-auto scrollbar-hide">
-          {loading && (
-            <div className="flex h-12 w-12 items-center justify-center text-xs text-muted-foreground">
-              ...
-            </div>
-          )}
-          {error && (
-            <div className="flex h-12 w-12 items-center justify-center text-xs text-destructive">
-              !
-            </div>
-          )}
+          {loading && <div className="text-xs text-muted-foreground py-2">...</div>}
+          {error   && <div className="text-xs text-destructive py-2">!</div>}
           <TooltipProvider delayDuration={0}>
-            {groups.map((group) => (
+            {groups.map(group => (
               <Tooltip key={group.id}>
                 <TooltipTrigger asChild>
-                  <button
-                    onClick={() => onSelectGroup(group)}
+                  <button onClick={() => onSelectGroup(group)}
                     className={cn(
                       "relative flex h-12 w-12 items-center justify-center rounded-2xl bg-sidebar-accent text-sidebar-foreground font-semibold text-sm transition-all hover:rounded-xl hover:bg-primary hover:text-primary-foreground",
-                      selectedGroup?.id === group.id &&
-                        "rounded-xl bg-primary text-primary-foreground"
-                    )}
-                  >
+                      selectedGroup?.id === group.id && "rounded-xl bg-primary text-primary-foreground"
+                    )}>
                     {group.avatar}
                     {group.unread > 0 && (
                       <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
@@ -244,15 +217,13 @@ export function GroupsSidebar({ selectedGroup, onSelectGroup }: GroupsSidebarPro
         <TooltipProvider delayDuration={0}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
-                onClick={() => setShowModal(true)}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sidebar-accent text-green-500 transition-all hover:rounded-xl hover:bg-green-500 hover:text-white"
-              >
+              <button onClick={() => setShowModal(true)}
+                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sidebar-accent text-green-500 transition-all hover:rounded-xl hover:bg-green-500 hover:text-white">
                 <Plus className="h-6 w-6" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right" className="bg-card text-card-foreground border-border">
-              <p>Create a Group</p>
+              <p>Crear grupo</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -266,7 +237,7 @@ export function GroupsSidebar({ selectedGroup, onSelectGroup }: GroupsSidebarPro
               </button>
             </TooltipTrigger>
             <TooltipContent side="right" className="bg-card text-card-foreground border-border">
-              <p>Settings</p>
+              <p>Configuración</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -275,10 +246,8 @@ export function GroupsSidebar({ selectedGroup, onSelectGroup }: GroupsSidebarPro
         <TooltipProvider delayDuration={0}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
-                onClick={handleLogout}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sidebar-accent text-destructive transition-all hover:rounded-xl hover:bg-destructive hover:text-white"
-              >
+              <button onClick={handleLogout}
+                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sidebar-accent text-destructive transition-all hover:rounded-xl hover:bg-destructive hover:text-white">
                 <LogOut className="h-5 w-5" />
               </button>
             </TooltipTrigger>
@@ -287,6 +256,7 @@ export function GroupsSidebar({ selectedGroup, onSelectGroup }: GroupsSidebarPro
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
       </div>
     </>
   )

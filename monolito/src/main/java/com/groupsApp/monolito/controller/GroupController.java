@@ -42,6 +42,22 @@ public class GroupController {
         return ResponseEntity.ok(ApiResponse.ok("Grupos obtenidos", groups));
     }
 
+    // GET /api/groups/search?name= — buscar grupos públicos
+    // IMPORTANTE: debe estar ANTES de /{id} para evitar colisión de rutas
+    @GetMapping("/search")
+    public ResponseEntity<ApiResponse<List<GroupDTO>>> searchGroups(@RequestParam String name) {
+        List<GroupDTO> groups = groupService.searchGroups(name);
+        return ResponseEntity.ok(ApiResponse.ok("Busqueda completada", groups));
+    }
+
+    // GET /api/groups/search/users?q= — buscar usuarios (para DMs y añadir miembros)
+    // IMPORTANTE: ruta estática antes de /{id} para evitar colisión
+    @GetMapping("/search/users")
+    public ResponseEntity<ApiResponse<List<UserSearchDTO>>> searchUsers(@RequestParam String q) {
+        List<UserSearchDTO> users = groupService.searchUsers(q);
+        return ResponseEntity.ok(ApiResponse.ok("Usuarios encontrados", users));
+    }
+
     // GET /api/groups/{id}
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<GroupDTO>> getGroupById(
@@ -49,13 +65,6 @@ public class GroupController {
             @AuthenticationPrincipal UserDetails userDetails) {
         GroupDTO group = groupService.getGroupById(id, userDetails.getUsername());
         return ResponseEntity.ok(ApiResponse.ok("Grupo encontrado", group));
-    }
-
-    // GET /api/groups/search?name=
-    @GetMapping("/search")
-    public ResponseEntity<ApiResponse<List<GroupDTO>>> searchGroups(@RequestParam String name) {
-        List<GroupDTO> groups = groupService.searchGroups(name);
-        return ResponseEntity.ok(ApiResponse.ok("Busqueda completada", groups));
     }
 
     // POST /api/groups/{id}/join — el usuario se une
@@ -86,7 +95,6 @@ public class GroupController {
     }
 
     // POST /api/groups/{id}/members — añadir un usuario (solo admin/owner)
-    // Body: { "username": "juanperez" }
     @PostMapping("/{id}/members")
     public ResponseEntity<ApiResponse<MemberDTO>> addMember(
             @PathVariable Long id,
@@ -98,12 +106,5 @@ public class GroupController {
                     .body(ApiResponse.error("El campo 'username' es requerido"));
         MemberDTO member = groupService.addMember(id, targetUsername, userDetails.getUsername());
         return ResponseEntity.ok(ApiResponse.ok("Usuario anadido al grupo", member));
-    }
-
-    // GET /api/groups/users/search?q= — buscar usuarios para DMs o añadir al grupo
-    @GetMapping("/users/search")
-    public ResponseEntity<ApiResponse<List<UserSearchDTO>>> searchUsers(@RequestParam String q) {
-        List<UserSearchDTO> users = groupService.searchUsers(q);
-        return ResponseEntity.ok(ApiResponse.ok("Usuarios encontrados", users));
     }
 }

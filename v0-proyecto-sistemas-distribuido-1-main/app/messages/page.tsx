@@ -7,32 +7,20 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { getDirectHistory, sendMessage, type MessageDTO } from "@/lib/services/messages.service"
 import { searchUsers, type UserSearchDTO } from "@/lib/services/groups.service"
-import { getUser } from "@/lib/api"
+import { useCurrentUser } from "@/hooks/use-current-user"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
-type Participant = { userId: number; username: string }
+type Participant  = { userId: number; username: string }
+type Conversation = { participant: Participant; lastMessage: string; lastTime: Date | null; unread: boolean }
+type UiMessage    = { id: string; content: string; isOwn: boolean; timestamp: Date }
 
-type Conversation = {
-  participant: Participant
-  lastMessage: string
-  lastTime: Date | null
-  unread: boolean
-}
-
-type UiMessage = {
-  id: string
-  content: string
-  isOwn: boolean
-  timestamp: Date
-}
-
-// ── Modal: buscar usuario real ────────────────────────────────
+// ── Modal buscar usuario ──────────────────────────────────────
 function NewDMModal({ onClose, onOpen }: {
   onClose: () => void
-  onOpen: (participant: Participant) => void
+  onOpen: (p: Participant) => void
 }) {
-  const [query, setQuery] = useState("")
-  const [results, setResults] = useState<UserSearchDTO[]>([])
+  const [query, setQuery]         = useState("")
+  const [results, setResults]     = useState<UserSearchDTO[]>([])
   const [searching, setSearching] = useState(false)
 
   useEffect(() => {
@@ -51,27 +39,24 @@ function NewDMModal({ onClose, onOpen }: {
           <h2 className="text-lg font-semibold text-card-foreground">Nuevo mensaje directo</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
         </div>
-
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
+          <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
             placeholder="Buscar por nombre o email..."
             className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
           {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
         </div>
-
         <div className="max-h-64 overflow-y-auto space-y-1">
+          {query.length < 2 && <p className="py-4 text-center text-sm text-muted-foreground">Escribe al menos 2 caracteres</p>}
           {results.length === 0 && query.length >= 2 && !searching && (
             <p className="py-4 text-center text-sm text-muted-foreground">No se encontraron usuarios</p>
           )}
-          {query.length < 2 && (
-            <p className="py-4 text-center text-sm text-muted-foreground">Escribe al menos 2 caracteres para buscar</p>
-          )}
-          {results.map((u) => (
-            <button key={u.userId} onClick={() => { onOpen({ userId: u.userId, username: u.username }); onClose() }}
+          {results.map(u => (
+            <button key={u.userId}
+              onClick={() => { onOpen({ userId: u.userId, username: u.username }); onClose() }}
               className="flex w-full items-center gap-3 rounded-lg p-2 hover:bg-muted text-left">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary">
-                {u.username.substring(0, 2).toUpperCase()}
+                {u.username.substring(0,2).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="truncate text-sm font-medium text-foreground">{u.username}</p>
@@ -87,35 +72,41 @@ function NewDMModal({ onClose, onOpen }: {
 }
 
 // ── Chat directo ──────────────────────────────────────────────
-function DirectChat({ participant, currentUserId, onNewMessage }: {
-  participant: Participant
-  currentUserId: number
-  onNewMessage: (content: string) => void
+function DirectChat({ participant, currentUserId, onNewMessage, incomingMessage }: {
+  participant: Participant; currentUserId: number
+  onNewMessage: (c: string) => void; incomingMessage: MessageDTO | null
 }) {
   const [messages, setMessages] = useState<UiMessage[]>([])
-  const [loading, setLoading] = useState(true)
-  const [text, setText] = useState("")
-  const [sending, setSending] = useState(false)
+  const [loading, setLoading]   = useState(true)
+  const [text, setText]         = useState("")
+  const [sending, setSending]   = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (!currentUserId) return
     setLoading(true); setMessages([])
     getDirectHistory(participant.userId)
-      .then((data: MessageDTO[]) => {
-        setMessages(data.map((m) => ({
-          id: String(m.id),
-          content: m.content,
-          isOwn: m.senderId === currentUserId,
-          timestamp: new Date(m.createdAt),
-        })))
-      })
+      .then(data => setMessages(data.map(m => ({
+        id: String(m.id), content: m.content,
+        isOwn: m.senderId === currentUserId,
+        timestamp: new Date(m.createdAt),
+      }))))
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [participant.userId, currentUserId])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+    if (!incomingMessage) return
+    if (incomingMessage.senderId !== participant.userId) return
+    setMessages(prev =>
+      prev.find(m => m.id === String(incomingMessage.id)) ? prev : [...prev, {
+        id: String(incomingMessage.id), content: incomingMessage.content,
+        isOwn: false, timestamp: new Date(incomingMessage.createdAt),
+      }]
+    )
+  }, [incomingMessage, participant.userId])
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -123,37 +114,30 @@ function DirectChat({ participant, currentUserId, onNewMessage }: {
     setSending(true)
     try {
       const sent = await sendMessage({ content: text, receiverId: participant.userId })
-      setMessages((prev) => [...prev, {
-        id: String(sent.id), content: sent.content, isOwn: true,
-        timestamp: new Date(sent.createdAt),
+      setMessages(prev => [...prev, {
+        id: String(sent.id), content: sent.content,
+        isOwn: true, timestamp: new Date(sent.createdAt),
       }])
-      onNewMessage(text)
-      setText("")
-    } catch (err) {
-      console.error("Error enviando DM:", err)
-    } finally { setSending(false) }
+      onNewMessage(text); setText("")
+    } catch (err) { console.error(err) }
+    finally { setSending(false) }
   }
-
-  const initials = participant.username.substring(0, 2).toUpperCase()
 
   return (
     <div className="flex flex-1 flex-col bg-background">
       <div className="flex h-14 items-center border-b border-border bg-card px-4 gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary">
-          {initials}
+          {participant.username.substring(0,2).toUpperCase()}
         </div>
         <div>
           <h3 className="font-semibold text-card-foreground">{participant.username}</h3>
           <p className="text-xs text-muted-foreground">Mensaje directo</p>
         </div>
       </div>
-
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading && <p className="text-center text-sm text-muted-foreground">Cargando historial...</p>}
-        {!loading && messages.length === 0 && (
-          <p className="text-center text-sm text-muted-foreground">No hay mensajes. Se el primero en escribir.</p>
-        )}
-        {messages.map((msg) => (
+        {!loading && messages.length === 0 && <p className="text-center text-sm text-muted-foreground">Sin mensajes aún.</p>}
+        {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.isOwn ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${
               msg.isOwn
@@ -169,13 +153,12 @@ function DirectChat({ participant, currentUserId, onNewMessage }: {
         ))}
         <div ref={bottomRef} />
       </div>
-
       <div className="border-t border-border bg-card p-4">
         <form onSubmit={handleSend} className="flex items-center gap-2">
           <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground">
             <Paperclip className="h-5 w-5" />
           </Button>
-          <Input value={text} onChange={(e) => setText(e.target.value)}
+          <Input value={text} onChange={e => setText(e.target.value)}
             placeholder={`Mensaje a ${participant.username}`}
             className="flex-1 border-transparent bg-muted focus:border-ring" />
           <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground">
@@ -190,47 +173,59 @@ function DirectChat({ participant, currentUserId, onNewMessage }: {
   )
 }
 
-// ── Pagina principal ──────────────────────────────────────────
+// ── Página principal ──────────────────────────────────────────
 export default function MessagesPage() {
-  const currentUser = getUser<{ userId: number; username: string }>()
+  const currentUser   = useCurrentUser()
   const currentUserId = currentUser?.userId ?? 0
 
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversations,       setConversations]       = useState<Conversation[]>([])
   const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [showNewDM, setShowNewDM] = useState(false)
+  const [searchQuery,         setSearchQuery]         = useState("")
+  const [showNewDM,           setShowNewDM]           = useState(false)
+  const [incomingDM,          setIncomingDM]          = useState<MessageDTO | null>(null)
+
+  // Escuchar el evento global de DMs emitido por StompProvider en layout.tsx
+  // Esto evita doble suscripción y funciona aunque la conexión STOMP ya esté activa
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const msg = (e as CustomEvent<MessageDTO>).detail
+      setIncomingDM(msg)
+      setConversations(prev => {
+        const exists = prev.find(c => c.participant.userId === msg.senderId)
+        if (exists) return prev.map(c =>
+          c.participant.userId === msg.senderId
+            ? { ...c, lastMessage: msg.content, lastTime: new Date(msg.createdAt), unread: true }
+            : c
+        )
+        return [{
+          participant: { userId: msg.senderId, username: msg.senderUsername },
+          lastMessage: msg.content, lastTime: new Date(msg.createdAt), unread: true,
+        }, ...prev]
+      })
+    }
+
+    window.addEventListener("dm:received", handler)
+    return () => window.removeEventListener("dm:received", handler)
+  }, [])
 
   const openConversation = (participant: Participant) => {
-    setConversations((prev) => {
-      const exists = prev.find((c) => c.participant.userId === participant.userId)
-      if (exists) return prev
+    setConversations(prev => {
+      if (prev.find(c => c.participant.userId === participant.userId)) return prev
       return [{ participant, lastMessage: "", lastTime: null, unread: false }, ...prev]
     })
     setSelectedParticipant(participant)
   }
 
-  const handleNewMessage = (participant: Participant, content: string) => {
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.participant.userId === participant.userId
-          ? { ...c, lastMessage: content, lastTime: new Date(), unread: false }
-          : c
-      )
-    )
-  }
-
-  const filtered = conversations.filter((c) =>
+  const filtered = conversations.filter(c =>
     c.participant.username.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   return (
     <>
-      {showNewDM && (
-        <NewDMModal onClose={() => setShowNewDM(false)} onOpen={openConversation} />
-      )}
+      {showNewDM && <NewDMModal onClose={() => setShowNewDM(false)} onOpen={openConversation} />}
 
       <div className="flex h-screen bg-background">
-        {/* Sidebar de icono */}
+        {/* Sidebar de iconos */}
         <div className="flex w-[72px] flex-col items-center gap-2 bg-sidebar py-3">
           <TooltipProvider delayDuration={0}>
             <Tooltip>
@@ -259,51 +254,77 @@ export default function MessagesPage() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+
+          {/* Usuario actual */}
+          <div className="mt-auto">
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sidebar-accent">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                      {currentUser?.username?.substring(0,2).toUpperCase() ?? ""}
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="bg-card text-card-foreground border-border">
+                  <p>{currentUser?.username ?? "Cargando..."}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </div>
 
         {/* Lista de conversaciones */}
         <div className="flex w-72 flex-col border-r border-border bg-card">
           <div className="flex h-14 items-center justify-between border-b border-border px-4">
             <h2 className="text-lg font-semibold text-card-foreground">Mensajes</h2>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowNewDM(true)} title="Nueva conversacion">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowNewDM(true)}>
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-
           <div className="p-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Buscar conversaciones..." value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+              <Input placeholder="Buscar..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                 className="h-9 bg-muted/50 pl-9 border-transparent focus:border-ring" />
             </div>
           </div>
-
           <div className="flex-1 overflow-y-auto">
             {filtered.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-muted-foreground">
                 Sin conversaciones.{" "}
                 <button className="text-primary hover:underline" onClick={() => setShowNewDM(true)}>
-                  Iniciar una nueva
+                  Iniciar una
                 </button>
               </p>
             )}
-            {filtered.map((conv) => {
-              const initials = conv.participant.username.substring(0, 2).toUpperCase()
+            {filtered.map(conv => {
+              const initials   = conv.participant.username.substring(0,2).toUpperCase()
               const isSelected = selectedParticipant?.userId === conv.participant.userId
               return (
                 <button key={conv.participant.userId}
-                  onClick={() => setSelectedParticipant(conv.participant)}
+                  onClick={() => {
+                    setSelectedParticipant(conv.participant)
+                    setConversations(prev => prev.map(c =>
+                      c.participant.userId === conv.participant.userId
+                        ? { ...c, unread: false } : c))
+                  }}
                   className={`flex w-full items-center gap-3 px-3 py-3 transition-colors hover:bg-muted ${isSelected ? "bg-muted" : ""}`}>
                   <div className="relative shrink-0">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary">
                       {initials}
                     </div>
-                    <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card bg-green-500" />
+                    {conv.unread && (
+                      <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card bg-primary" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0 text-left">
-                    <p className="truncate font-medium text-card-foreground">{conv.participant.username}</p>
-                    <p className="truncate text-sm text-muted-foreground">{conv.lastMessage || "Iniciar conversacion"}</p>
+                    <p className={`truncate text-sm font-medium ${conv.unread ? "text-foreground" : "text-card-foreground"}`}>
+                      {conv.participant.username}
+                    </p>
+                    <p className={`truncate text-xs ${conv.unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                      {conv.lastMessage || "Iniciar conversación"}
+                    </p>
                   </div>
                 </button>
               )
@@ -311,18 +332,29 @@ export default function MessagesPage() {
           </div>
         </div>
 
-        {/* Area de chat */}
-        {selectedParticipant ? (
-          <DirectChat participant={selectedParticipant} currentUserId={currentUserId}
-            onNewMessage={(content) => handleNewMessage(selectedParticipant, content)} />
+        {/* Área de chat */}
+        {selectedParticipant && currentUserId ? (
+          <DirectChat
+            participant={selectedParticipant}
+            currentUserId={currentUserId}
+            incomingMessage={incomingDM}
+            onNewMessage={content => setConversations(prev => prev.map(c =>
+              c.participant.userId === selectedParticipant.userId
+                ? { ...c, lastMessage: content, lastTime: new Date(), unread: false } : c
+            ))}
+          />
+        ) : selectedParticipant && !currentUserId ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-muted-foreground">Cargando...</p>
+          </div>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center bg-background">
             <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-muted">
               <Users className="h-10 w-10 text-muted-foreground" />
             </div>
-            <h3 className="mb-2 text-xl font-semibold text-foreground">Tus Mensajes</h3>
+            <h3 className="mb-2 text-xl font-semibold text-foreground">Tus mensajes</h3>
             <p className="text-center text-muted-foreground max-w-xs">
-              Selecciona una conversacion o haz clic en{" "}
+              Haz clic en{" "}
               <button className="text-primary hover:underline" onClick={() => setShowNewDM(true)}>+</button>
               {" "}para iniciar un chat.
             </p>

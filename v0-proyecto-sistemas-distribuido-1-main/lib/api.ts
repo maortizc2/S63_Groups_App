@@ -62,13 +62,19 @@ export async function apiRequest<T>(
     }
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const fullUrl = `${BASE_URL}${path}`
+
+  // LOG temporal de diagnóstico
+  console.warn(`[API →] ${method} ${fullUrl}`)
+
+  const response = await fetch(fullUrl, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   })
 
-  // Manejar 401 antes de intentar parsear el cuerpo
+  console.warn(`[API ←] ${method} ${fullUrl} = ${response.status}`)
+
   if (response.status === 401) {
     removeToken()
     if (typeof window !== "undefined") {
@@ -77,12 +83,9 @@ export async function apiRequest<T>(
     throw new Error("Sesión expirada")
   }
 
-  // Algunos endpoints devuelven 204 No Content (cuerpo vacío)
-  // response.json() lanza SyntaxError en ese caso — lo manejamos aquí
   const contentType = response.headers.get("content-type") ?? ""
   const hasJson = contentType.includes("application/json")
 
-  // Si no hay cuerpo JSON, solo verificamos el status
   if (!hasJson || response.status === 204) {
     if (!response.ok) {
       throw new Error(`Error ${response.status}`)
@@ -90,7 +93,6 @@ export async function apiRequest<T>(
     return undefined as unknown as T
   }
 
-  // Parsear JSON con manejo de errores
   let json: { success?: boolean; message?: string; data?: T }
   try {
     json = await response.json()
@@ -99,6 +101,8 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
+    // LOG del mensaje del backend al fallar
+    console.error(`[API ERROR] ${method} ${fullUrl} → ${response.status}:`, json.message)
     throw new Error(json.message ?? `Error ${response.status}`)
   }
 
