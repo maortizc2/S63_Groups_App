@@ -1,35 +1,116 @@
-# v0-proyecto-sistemas-distribuido-1
+# GroupsApp — Frontend
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
+> ST0263 · SI3007 · Sistemas Distribuidos 2026-1
 
-## Built with v0
+Frontend de GroupsApp construido con **Next.js 16**, **TypeScript** y **Tailwind CSS**. Interfaz de mensajería en tiempo real conectada al backend Spring Boot mediante REST y WebSocket STOMP.
 
-This repository is linked to a [v0](https://v0.app) project. You can continue developing by visiting the link below -- start new chats to make changes, and v0 will push commits directly to this repo. Every merge to `main` will automatically deploy.
+---
 
-[Continue working on v0 →](https://v0.app/chat/projects/prj_usAK0CfSypWbiUazA4ucBp21ZU8W)
+## 🛠 Tecnologías
 
-## Getting Started
+| Tecnología | Versión | Uso |
+|---|---|---|
+| Next.js | 16.2 | Framework React con App Router |
+| React | 19 | UI components |
+| TypeScript | 5.7 | Tipado estático |
+| Tailwind CSS | 4.x | Estilos utilitarios |
+| @stomp/stompjs | 7.x | Cliente WebSocket STOMP |
+| SockJS | 1.x | Fallback WebSocket (requerido por Spring) |
+| Radix UI | — | Componentes accesibles (shadcn/ui) |
+| Lucide React | — | Iconos |
+| Zod | 3.x | Validación de formularios |
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
+## 📁 Estructura del proyecto
+
+```
+app/
+├── layout.tsx              ← Layout global + StompProvider (conexión WS)
+├── page.tsx                ← Página principal: grupos, canales, chat
+├── login/page.tsx          ← Login y registro de usuarios
+└── messages/page.tsx       ← Mensajes directos entre usuarios
+
+components/
+├── groups-sidebar.tsx      ← Sidebar de grupos + modal crear grupo
+├── channels-sidebar.tsx    ← Canales del grupo seleccionado
+├── chat-area.tsx           ← Área de chat de canal (historial + envío)
+├── members-sidebar.tsx     ← Lista de miembros del grupo
+├── direct-message-chat.tsx ← Chat directo (legacy, reemplazado en messages/page)
+├── stomp-provider.tsx      ← Mantiene conexión STOMP global en toda la app
+└── ui/                     ← Componentes shadcn/ui (button, input, etc.)
+
+hooks/
+├── use-current-user.ts     ← Lee usuario de localStorage (sin hydration mismatch)
+├── use-mobile.ts           ← Detecta pantallas móviles
+└── use-toast.ts            ← Notificaciones toast
+
+lib/
+├── api.ts                  ← Cliente HTTP base con JWT interceptor
+├── utils.ts                ← Utilidades (cn, etc.)
+└── services/
+    ├── auth.service.ts      ← Login, register, logout
+    ├── groups.service.ts    ← Grupos, miembros, búsqueda de usuarios
+    ├── channels.service.ts  ← Canales
+    ├── messages.service.ts  ← Historial de mensajes
+    └── websocket.service.ts ← Conexión STOMP, suscripciones a canales y DMs
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🚀 Levantar el frontend
 
-## Learn More
+### Requisitos
+- Node.js 18+
+- Backend corriendo en `localhost:8080`
 
-To learn more, take a look at the following resources:
+### Instalación y arranque
+```bash
+npm install
+npm run dev
+```
+La app queda disponible en `http://localhost:3000`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [v0 Documentation](https://v0.app/docs) - learn about v0 and how to use it.
+---
 
-<a href="https://v0.app/chat/api/kiro/clone/ssabogall/v0-proyecto-sistemas-distribuido-1" alt="Open in Kiro"><img src="https://pdgvvgmkdvyeydso.public.blob.vercel-storage.com/open%20in%20kiro.svg?sanitize=true" /></a>
+## 🔐 Autenticación
+
+- Al hacer login, el token JWT se guarda en `localStorage` con la clave `token`
+- El usuario se guarda en `localStorage` con la clave `user`
+- Cada request al backend incluye `Authorization: Bearer <token>`
+- Si el servidor responde 401, el token se elimina y se redirige a `/login`
+
+---
+
+## 🌐 Variables de entorno (`.env.local`)
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8080/api
+NEXT_PUBLIC_WS_URL=ws://localhost:8080
+```
+
+---
+
+## 📡 WebSocket en tiempo real
+
+La conexión STOMP se inicia globalmente en `StompProvider` (montado en `layout.tsx`) para que los mensajes lleguen sin importar en qué página esté el usuario.
+
+- **Canales de grupo:** suscripción a `/topic/channel/{channelId}`
+- **Mensajes directos:** suscripción global a `/user/queue/messages`
+- Los mensajes entrantes se emiten como eventos del navegador (`dm:received`) para evitar doble suscripción
+
+---
+
+## 🧩 Funcionalidades implementadas
+
+- ✅ Registro e inicio de sesión con JWT
+- ✅ Ver y seleccionar grupos propios
+- ✅ Crear grupos (público o privado)
+- ✅ Ver canales de un grupo
+- ✅ Chat de canal con historial persistido
+- ✅ Mensajes en tiempo real via STOMP
+- ✅ Mensajes directos entre usuarios
+- ✅ Buscar usuarios por nombre o email
+- ✅ Ver miembros de un grupo
+- ✅ Cerrar sesión
+- ✅ Usuario actual siempre visible en sidebar
