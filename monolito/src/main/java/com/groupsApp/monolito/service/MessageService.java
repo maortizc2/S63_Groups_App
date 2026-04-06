@@ -75,7 +75,8 @@ public class MessageService {
         return MessageDTO.fromEntity(saved, sender.getId());
     }
 
-    @Transactional(readOnly = true)
+    // ── readOnly = false porque markAllAsRead hace un UPDATE ──
+    @Transactional
     public List<MessageDTO> getChannelHistory(Long channelId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
@@ -83,13 +84,13 @@ public class MessageService {
                 .orElseThrow(() -> new RuntimeException("Canal no encontrado"));
         if (!groupMemberRepository.existsByUserAndGroup(user, channel.getGroup()))
             throw new RuntimeException("No tienes acceso a este canal");
+        // Marcar mensajes como leídos (UPDATE — requiere transacción de escritura)
         messageStatusRepository.markAllAsRead(user.getId(), channelId, LocalDateTime.now());
         return messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId)
                 .stream().map(m -> MessageDTO.fromEntity(m, user.getId()))
                 .collect(Collectors.toList());
     }
 
-    // ── @Transactional añadido: MessageDTO.fromEntity accede a relaciones lazy
     @Transactional(readOnly = true)
     public List<MessageDTO> getDirectHistory(Long otherUserId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
@@ -101,7 +102,6 @@ public class MessageService {
                 .collect(Collectors.toList());
     }
 
-    // ── @Transactional añadido: accede a relaciones lazy en countUnreadMessages
     @Transactional(readOnly = true)
     public long getUnreadCount(Long channelId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)

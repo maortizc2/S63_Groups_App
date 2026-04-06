@@ -72,9 +72,11 @@ function NewDMModal({ onClose, onOpen }: {
 }
 
 // ── Chat directo ──────────────────────────────────────────────
-function DirectChat({ participant, currentUserId, onNewMessage, incomingMessage }: {
+function DirectChat({ participant, currentUserId, onNewMessage, incomingMessage, onClose }: {
   participant: Participant; currentUserId: number
-  onNewMessage: (c: string) => void; incomingMessage: MessageDTO | null
+  onNewMessage: (c: string) => void
+  incomingMessage: MessageDTO | null
+  onClose: () => void   // ← botón cerrar
 }) {
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [loading, setLoading]   = useState(true)
@@ -95,6 +97,7 @@ function DirectChat({ participant, currentUserId, onNewMessage, incomingMessage 
       .finally(() => setLoading(false))
   }, [participant.userId, currentUserId])
 
+  // Recibir mensajes entrantes por WebSocket
   useEffect(() => {
     if (!incomingMessage) return
     if (incomingMessage.senderId !== participant.userId) return
@@ -114,26 +117,43 @@ function DirectChat({ participant, currentUserId, onNewMessage, incomingMessage 
     setSending(true)
     try {
       const sent = await sendMessage({ content: text, receiverId: participant.userId })
-      setMessages(prev => [...prev, {
-        id: String(sent.id), content: sent.content,
-        isOwn: true, timestamp: new Date(sent.createdAt),
-      }])
-      onNewMessage(text); setText("")
+      // FIX duplicado: agregar solo si el ID no existe ya en la lista
+      // (el WebSocket podría haberlo agregado antes por el broadcast del backend)
+      setMessages(prev =>
+        prev.find(m => m.id === String(sent.id)) ? prev : [...prev, {
+          id: String(sent.id), content: sent.content,
+          isOwn: true, timestamp: new Date(sent.createdAt),
+        }]
+      )
+      onNewMessage(text)
+      setText("")
     } catch (err) { console.error(err) }
     finally { setSending(false) }
   }
 
   return (
     <div className="flex flex-1 flex-col bg-background">
-      <div className="flex h-14 items-center border-b border-border bg-card px-4 gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary">
-          {participant.username.substring(0,2).toUpperCase()}
+      {/* Header con botón cerrar */}
+      <div className="flex h-14 items-center justify-between border-b border-border bg-card px-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary">
+            {participant.username.substring(0,2).toUpperCase()}
+          </div>
+          <div>
+            <h3 className="font-semibold text-card-foreground">{participant.username}</h3>
+            <p className="text-xs text-muted-foreground">Mensaje directo</p>
+          </div>
         </div>
-        <div>
-          <h3 className="font-semibold text-card-foreground">{participant.username}</h3>
-          <p className="text-xs text-muted-foreground">Mensaje directo</p>
-        </div>
+        {/* Botón cerrar chat */}
+        <button
+          onClick={onClose}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          title="Cerrar conversación"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading && <p className="text-center text-sm text-muted-foreground">Cargando historial...</p>}
         {!loading && messages.length === 0 && <p className="text-center text-sm text-muted-foreground">Sin mensajes aún.</p>}
@@ -153,6 +173,7 @@ function DirectChat({ participant, currentUserId, onNewMessage, incomingMessage 
         ))}
         <div ref={bottomRef} />
       </div>
+
       <div className="border-t border-border bg-card p-4">
         <form onSubmit={handleSend} className="flex items-center gap-2">
           <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground">
@@ -184,8 +205,7 @@ export default function MessagesPage() {
   const [showNewDM,           setShowNewDM]           = useState(false)
   const [incomingDM,          setIncomingDM]          = useState<MessageDTO | null>(null)
 
-  // Escuchar el evento global de DMs emitido por StompProvider en layout.tsx
-  // Esto evita doble suscripción y funciona aunque la conexión STOMP ya esté activa
+  // Escuchar el evento global de DMs emitido por StompProvider
   useEffect(() => {
     const handler = (e: Event) => {
       const msg = (e as CustomEvent<MessageDTO>).detail
@@ -203,7 +223,6 @@ export default function MessagesPage() {
         }, ...prev]
       })
     }
-
     window.addEventListener("dm:received", handler)
     return () => window.removeEventListener("dm:received", handler)
   }, [])
@@ -234,9 +253,7 @@ export default function MessagesPage() {
                   <ArrowLeft className="h-5 w-5" />
                 </Link>
               </TooltipTrigger>
-              <TooltipContent side="right" className="bg-card text-card-foreground border-border">
-                <p>Volver a grupos</p>
-              </TooltipContent>
+              <TooltipContent side="right" className="bg-card text-card-foreground border-border"><p>Volver a grupos</p></TooltipContent>
             </Tooltip>
           </TooltipProvider>
 
@@ -249,13 +266,10 @@ export default function MessagesPage() {
                   <Users className="h-6 w-6" />
                 </div>
               </TooltipTrigger>
-              <TooltipContent side="right" className="bg-card text-card-foreground border-border">
-                <p>Mensajes directos</p>
-              </TooltipContent>
+              <TooltipContent side="right" className="bg-card text-card-foreground border-border"><p>Mensajes directos</p></TooltipContent>
             </Tooltip>
           </TooltipProvider>
 
-          {/* Usuario actual */}
           <div className="mt-auto">
             <TooltipProvider delayDuration={0}>
               <Tooltip>
@@ -293,9 +307,7 @@ export default function MessagesPage() {
             {filtered.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-muted-foreground">
                 Sin conversaciones.{" "}
-                <button className="text-primary hover:underline" onClick={() => setShowNewDM(true)}>
-                  Iniciar una
-                </button>
+                <button className="text-primary hover:underline" onClick={() => setShowNewDM(true)}>Iniciar una</button>
               </p>
             )}
             {filtered.map(conv => {
@@ -306,25 +318,16 @@ export default function MessagesPage() {
                   onClick={() => {
                     setSelectedParticipant(conv.participant)
                     setConversations(prev => prev.map(c =>
-                      c.participant.userId === conv.participant.userId
-                        ? { ...c, unread: false } : c))
+                      c.participant.userId === conv.participant.userId ? { ...c, unread: false } : c))
                   }}
                   className={`flex w-full items-center gap-3 px-3 py-3 transition-colors hover:bg-muted ${isSelected ? "bg-muted" : ""}`}>
                   <div className="relative shrink-0">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary">
-                      {initials}
-                    </div>
-                    {conv.unread && (
-                      <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card bg-primary" />
-                    )}
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary">{initials}</div>
+                    {conv.unread && <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card bg-primary" />}
                   </div>
                   <div className="flex-1 min-w-0 text-left">
-                    <p className={`truncate text-sm font-medium ${conv.unread ? "text-foreground" : "text-card-foreground"}`}>
-                      {conv.participant.username}
-                    </p>
-                    <p className={`truncate text-xs ${conv.unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>
-                      {conv.lastMessage || "Iniciar conversación"}
-                    </p>
+                    <p className={`truncate text-sm font-medium ${conv.unread ? "text-foreground" : "text-card-foreground"}`}>{conv.participant.username}</p>
+                    <p className={`truncate text-xs ${conv.unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>{conv.lastMessage || "Iniciar conversación"}</p>
                   </div>
                 </button>
               )
@@ -338,6 +341,7 @@ export default function MessagesPage() {
             participant={selectedParticipant}
             currentUserId={currentUserId}
             incomingMessage={incomingDM}
+            onClose={() => setSelectedParticipant(null)}
             onNewMessage={content => setConversations(prev => prev.map(c =>
               c.participant.userId === selectedParticipant.userId
                 ? { ...c, lastMessage: content, lastTime: new Date(), unread: false } : c

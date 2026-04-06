@@ -44,6 +44,12 @@ function toUiMessage(m: MessageDTO): Message {
   }
 }
 
+// Helper para agregar mensaje sin duplicados
+function addUniqueMessage(prev: Message[], msg: Message): Message[] {
+  if (prev.find(m => m.id === msg.id)) return prev
+  return [...prev, msg]
+}
+
 export default function Home() {
   const router = useRouter()
   const [selectedGroup,   setSelectedGroup]   = useState<Group | null>(null)
@@ -55,14 +61,12 @@ export default function Home() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const unsubscribeRef = useRef<(() => void) | null>(null)
 
-  // Guard + iniciar STOMP una sola vez al montar
   useEffect(() => {
     if (!getToken()) { router.push("/login"); return }
     initStomp()
     return () => { disconnectStomp() }
   }, [router])
 
-  // Canales al cambiar de grupo
   useEffect(() => {
     if (!selectedGroup) return
     setChannels([]); setSelectedChannel(null); setMessages([])
@@ -73,13 +77,9 @@ export default function Home() {
       .finally(() => setLoadingChannels(false))
   }, [selectedGroup])
 
-  // Historial + suscripción WS al cambiar de canal
   useEffect(() => {
     if (!selectedChannel) return
-
-    // Cancelar suscripción anterior
     unsubscribeRef.current?.()
-
     setMessages([]); setLoadingMessages(true)
 
     getChannelHistory(Number(selectedChannel.id))
@@ -87,11 +87,9 @@ export default function Home() {
       .catch(console.error)
       .finally(() => setLoadingMessages(false))
 
-    // Suscribir — síncrono, la conexión se encola si aún no está lista
+    // WebSocket: agregar solo si el ID no existe (evita duplicado del emisor)
     const unsub = subscribeToChannel(Number(selectedChannel.id), (msg: MessageDTO) => {
-      setMessages(prev =>
-        prev.find(m => m.id === String(msg.id)) ? prev : [...prev, toUiMessage(msg)]
-      )
+      setMessages(prev => addUniqueMessage(prev, toUiMessage(msg)))
     })
     unsubscribeRef.current = unsub
 
@@ -102,7 +100,9 @@ export default function Home() {
     if (!content.trim() || !selectedChannel) return
     try {
       const sent = await sendMessage({ content, channelId: Number(selectedChannel.id) })
-      setMessages(prev => [...prev, toUiMessage(sent)])
+      // FIX duplicado: agregar por REST solo si WebSocket no lo agregó antes
+      setMessages(prev => addUniqueMessage(prev, toUiMessage(sent)))
+
       if (attachments?.length) {
         const token = getToken()
         const base = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api")
