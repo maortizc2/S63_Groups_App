@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: groupsapp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: groupsapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: groupsapp1234
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - groupsapp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  monolito:
+    image: groupsapp-monolito:dev
+    container_name: groupsapp-monolito
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/groupsapp
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: groupsapp1234
+      APP_JWT_SECRET: groupsAppSecretKey2026SuperLongAndSecureKeyForJWT
+      APP_JWT_EXPIRATION: 86400000
+      APP_UPLOAD_DIR: /tmp/uploads
+    ports:
+      - "8080:8080"
+    networks:
+      - groupsapp-network
+
+volumes:
+  postgres_data:
+
+networks:
+  groupsapp-network:
+    driver: bridge

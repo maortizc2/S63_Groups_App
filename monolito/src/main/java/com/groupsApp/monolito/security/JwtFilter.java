@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Component
 public class JwtFilter extends OncePerRequestFilter {
@@ -34,28 +36,28 @@ public class JwtFilter extends OncePerRequestFilter {
         String authHeader = request.getHeader("Authorization");
 
         // ── LOG DE DIAGNÓSTICO ────────────────────────
-        System.out.println("=== JwtFilter ===");
-        System.out.println("URL: " + request.getRequestURI());
-        System.out.println("Authorization header: " + authHeader);
+        logger.info("=== JwtFilter ===");
+        logger.info("URL: " + request.getRequestURI());
+        logger.info("Authorization header: " + authHeader);
         // ─────────────────────────────────────────────
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            System.out.println("❌ No hay token o formato incorrecto");
+            logger.warn("No hay token o formato incorrecto");
             filterChain.doFilter(request, response);
             return;
         }
 
         String token = authHeader.substring(7);
-        System.out.println("Token extraído: " + token.substring(0, 20) + "...");
+        logger.info("Token extraído: " + token.substring(0, 20) + "...");
 
         if (!jwtUtil.validateToken(token)) {
-            System.out.println("❌ Token inválido o expirado");
+            logger.warn("Token inválido o expirado");
             filterChain.doFilter(request, response);
             return;
         }
 
         String email = jwtUtil.getEmailFromToken(token);
-        System.out.println("✅ Email del token: " + email);
+        logger.info("Email del token: " + email);
 
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(email);
@@ -67,7 +69,7 @@ public class JwtFilter extends OncePerRequestFilter {
                     new WebAuthenticationDetailsSource().buildDetails(request)
             );
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            System.out.println("✅ Usuario autenticado: " + email);
+            logger.info("Usuario autenticado: " + email);
         }
 
         filterChain.doFilter(request, response);

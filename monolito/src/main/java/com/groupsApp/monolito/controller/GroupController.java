@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/groups")
+@RequestMapping("/api/v1/groups")
 public class GroupController {
 
     private final GroupService groupService;

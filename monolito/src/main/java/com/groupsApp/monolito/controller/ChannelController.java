@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/groups/{groupId}/channels")
+@RequestMapping("/api/v1/groups/{groupId}/channels")
 public class ChannelController {
 
     private final ChannelService channelService;

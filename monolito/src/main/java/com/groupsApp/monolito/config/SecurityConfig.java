@@ -42,7 +42,9 @@ public class SecurityConfig {
             .formLogin(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/ws/**").permitAll()
+                .requestMatchers("/api/v1/auth/**", "/ws/**",
+                                "/api/v2/auth/login", "/swagger-ui/**", 
+                                "/swagger-ui.html", "/v3/api-docs/**", "/actuator/**").permitAll()
                 .anyRequest().authenticated()
             )
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
