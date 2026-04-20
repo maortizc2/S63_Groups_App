@@ -9,7 +9,13 @@ import { MembersSidebar } from "@/components/members-sidebar"
 import { getToken } from "@/lib/api"
 import { getChannelsByGroup, type ChannelDTO } from "@/lib/services/channels.service"
 import { type GroupDTO } from "@/lib/services/groups.service"
-import { getChannelHistory, sendMessage, type MessageDTO } from "@/lib/services/messages.service"
+import {
+  getChannelHistory,
+  sendMessage,
+  uploadFile,
+  getFileDownloadUrl,
+  type MessageDTO,
+} from "@/lib/services/messages.service"
 import { initStomp, subscribeToChannel, disconnectStomp } from "@/lib/services/websocket.service"
 
 export type Group   = { id: string; name: string; avatar: string; unread: number }
@@ -34,13 +40,43 @@ function toUiChannel(c: ChannelDTO): Channel {
   return { id: String(c.id), name: c.name, type: "text", unread: 0 }
 }
 function toUiMessage(m: MessageDTO): Message {
+  const attachments: Message["attachments"] = []
+  const hasFile = !!(m.fileId && m.fileName)
+
+  if (hasFile) {
+    attachments.push({
+      id: String(m.fileId!),
+      name: m.fileName!,
+      type: m.type ?? "FILE",
+      url: m.fileUrl ?? getFileDownloadUrl(m.fileId!),
+    })
+  }
+
+  // Si el mensaje tiene archivo, no mostrar el content cuando es igual al nombre del archivo
+  // (para evitar el texto redundante arriba de la tarjeta de descarga)
+  let displayContent = m.content ?? ""
+  if (hasFile && displayContent === m.fileName) {
+    displayContent = ""
+  }
+
+  const statusMap: Record<string, Message["status"]> = {
+    SENT: "sent",
+    DELIVERED: "delivered",
+    READ: "read",
+  }
+
   return {
-    id: String(m.id), content: m.content,
+    id: String(m.id),
+    content: displayContent,
     sender: {
-      id: String(m.senderId), name: m.senderUsername,
-      avatar: m.senderUsername.substring(0,2).toUpperCase(), status: "online",
+      id: String(m.senderId),
+      name: m.senderUsername,
+      avatar: m.senderUsername.substring(0, 2).toUpperCase(),
+      status: "online",
     },
-    timestamp: new Date(m.createdAt), status: "read",
+    timestamp: new Date(m.createdAt),
+    status: statusMap[m.deliveryStatus ?? "SENT"] ?? "sent",
+    attachments: attachments.length > 0 ? attachments : undefined,
   }
 }
 
@@ -87,7 +123,6 @@ export default function Home() {
       .catch(console.error)
       .finally(() => setLoadingMessages(false))
 
-    // WebSocket: agregar solo si el ID no existe (evita duplicado del emisor)
     const unsub = subscribeToChannel(Number(selectedChannel.id), (msg: MessageDTO) => {
       setMessages(prev => addUniqueMessage(prev, toUiMessage(msg)))
     })
@@ -97,26 +132,42 @@ export default function Home() {
   }, [selectedChannel])
 
   const handleSendMessage = async (content: string, attachments?: File[]) => {
-    if (!content.trim() || !selectedChannel) return
-    try {
-      const sent = await sendMessage({ content, channelId: Number(selectedChannel.id) })
-      // FIX duplicado: agregar por REST solo si WebSocket no lo agregó antes
-      setMessages(prev => addUniqueMessage(prev, toUiMessage(sent)))
+    if (!selectedChannel) return
+    if (!content.trim() && (!attachments || attachments.length === 0)) return
 
-      if (attachments?.length) {
-        const token = getToken()
-        const base = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api")
-        for (const file of attachments) {
-          const form = new FormData()
-          form.append("file", file); form.append("channelId", selectedChannel.id)
-          await fetch(`${base}/files/upload`, {
-            method: "POST",
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-            body: form,
-          })
-        }
+    try {
+      // CASO 1: Solo texto
+      if (!attachments || attachments.length === 0) {
+        const sent = await sendMessage({
+          content,
+          channelId: Number(selectedChannel.id),
+          type: "TEXT",
+        })
+        setMessages(prev => addUniqueMessage(prev, toUiMessage(sent)))
+        return
       }
-    } catch (err) { console.error(err) }
+
+      // CASO 2: Con archivos
+      for (const file of attachments) {
+        const fileMeta = await uploadFile(file)
+        const isImage = file.type.startsWith("image/")
+        const msgType = isImage ? "IMAGE" : "FILE"
+
+        // Enviar content del usuario si lo hay, si no enviar vacío
+        // (la tarjeta del archivo ya muestra el nombre)
+        const sent = await sendMessage({
+          content: content || "",
+          channelId: Number(selectedChannel.id),
+          type: msgType,
+          fileId: fileMeta.id,
+        })
+        setMessages(prev => addUniqueMessage(prev, toUiMessage(sent)))
+        // Solo el primer archivo lleva el texto, los demás van sin texto
+        content = ""
+      }
+    } catch (err) {
+      console.error("Error enviando mensaje:", err)
+    }
   }
 
   if (!selectedGroup) return (

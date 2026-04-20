@@ -13,12 +13,17 @@ import {
   Check,
   CheckCheck,
   FileText,
+  Download,
+  Image as ImageIcon,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Channel, Message } from "@/app/page"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { getToken } from "@/lib/api"
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api"
 
 interface ChatAreaProps {
   channel: Channel
@@ -60,6 +65,138 @@ function formatDate(date: Date) {
   })
 }
 
+/** Construye la URL completa del archivo */
+function buildFileUrl(url: string): string {
+  if (url.startsWith("http")) return url
+  // url viene como "/api/files/123" desde el DTO
+  if (url.startsWith("/api/")) return `${API_BASE}${url.replace("/api", "")}`
+  return `${API_BASE}${url}`
+}
+
+/** Descarga un archivo con autenticación via fetch */
+function handleDownload(url: string, fileName: string) {
+  const token = getToken()
+  const fullUrl = buildFileUrl(url)
+
+  fetch(fullUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error("Error descargando archivo")
+      return res.blob()
+    })
+    .then((blob) => {
+      const blobUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = blobUrl
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(blobUrl)
+    })
+    .catch((err) => console.error("Error descargando:", err))
+}
+
+/** Componente para preview de imagen autenticada (usa fetch + blob) */
+function AuthImage({ url, alt, onClick }: { url: string; alt: string; onClick: () => void }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    const token = getToken()
+    const fullUrl = buildFileUrl(url)
+    let objectUrl: string | null = null
+
+    fetch(fullUrl, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Error cargando imagen")
+        return res.blob()
+      })
+      .then((blob) => {
+        objectUrl = window.URL.createObjectURL(blob)
+        setBlobUrl(objectUrl)
+      })
+      .catch(() => setError(true))
+
+    return () => {
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl)
+    }
+  }, [url])
+
+  if (error) {
+    return (
+      <button
+        onClick={onClick}
+        className="flex items-center gap-2 rounded-lg bg-card border border-border px-3 py-2 cursor-pointer hover:bg-muted transition-colors"
+      >
+        <ImageIcon className="h-4 w-4 text-primary" />
+        <span className="text-sm font-medium">{alt}</span>
+        <Download className="h-3 w-3 text-muted-foreground" />
+      </button>
+    )
+  }
+
+  if (!blobUrl) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/30 max-w-sm h-32 flex items-center justify-center">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={blobUrl}
+      alt={alt}
+      className="rounded-lg border border-border max-h-64 max-w-sm object-contain cursor-pointer hover:opacity-90 transition-opacity"
+      onClick={onClick}
+    />
+  )
+}
+
+/** Componente para mostrar un archivo adjunto */
+function FileAttachment({ attachment }: { attachment: NonNullable<Message["attachments"]>[number] }) {
+  const isImage = attachment.type === "IMAGE"
+
+  // Para imágenes, mostrar preview autenticado
+  if (isImage) {
+    return (
+      <div className="mt-2">
+        <AuthImage
+          url={attachment.url}
+          alt={attachment.name}
+          onClick={() => handleDownload(attachment.url, attachment.name)}
+        />
+        <p className="text-xs text-muted-foreground mt-1">{attachment.name}</p>
+      </div>
+    )
+  }
+
+  // Para archivos, mostrar tarjeta descargable
+  return (
+    <button
+      onClick={() => handleDownload(attachment.url, attachment.name)}
+      className="mt-2 flex items-center gap-3 rounded-lg bg-card border border-border px-4 py-3 hover:bg-muted transition-colors cursor-pointer group"
+    >
+      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+        <FileText className="h-5 w-5 text-primary" />
+      </div>
+      <div className="flex flex-col items-start min-w-0">
+        <span className="text-sm font-medium text-foreground truncate max-w-[200px]">
+          {attachment.name}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          Click para descargar
+        </span>
+      </div>
+      <Download className="h-4 w-4 text-muted-foreground group-hover:text-foreground ml-2 transition-colors" />
+    </button>
+  )
+}
+
 export function ChatArea({
   channel,
   messages,
@@ -69,6 +206,7 @@ export function ChatArea({
 }: ChatAreaProps) {
   const [inputValue, setInputValue] = useState("")
   const [attachments, setAttachments] = useState<File[]>([])
+  const [isSending, setIsSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -76,12 +214,18 @@ export function ChatArea({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSending) return
     if (inputValue.trim() || attachments.length > 0) {
-      onSendMessage(inputValue.trim(), attachments.length > 0 ? attachments : undefined)
-      setInputValue("")
-      setAttachments([])
+      setIsSending(true)
+      try {
+        await onSendMessage(inputValue.trim(), attachments.length > 0 ? attachments : undefined)
+      } finally {
+        setInputValue("")
+        setAttachments([])
+        setIsSending(false)
+      }
     }
   }
 
@@ -89,6 +233,8 @@ export function ChatArea({
     if (e.target.files) {
       setAttachments([...attachments, ...Array.from(e.target.files)])
     }
+    // Reset para poder seleccionar el mismo archivo de nuevo
+    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   const removeAttachment = (index: number) => {
@@ -186,21 +332,17 @@ export function ChatArea({
                     </span>
                     <MessageStatus status={message.status} />
                   </div>
-                  <p className="mt-0.5 text-foreground leading-relaxed">{message.content}</p>
 
-                  {/* Attachments */}
+                  {/* Texto del mensaje */}
+                  {message.content && (
+                    <p className="mt-0.5 text-foreground leading-relaxed">{message.content}</p>
+                  )}
+
+                  {/* Archivos adjuntos */}
                   {message.attachments && message.attachments.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2">
                       {message.attachments.map((attachment) => (
-                        <div
-                          key={attachment.id}
-                          className="flex items-center gap-2 rounded-lg bg-card border border-border px-3 py-2"
-                        >
-                          <FileText className="h-4 w-4 text-primary" />
-                          <span className="text-sm text-foreground">
-                            {attachment.name}
-                          </span>
-                        </div>
+                        <FileAttachment key={attachment.id} attachment={attachment} />
                       ))}
                     </div>
                   )}
@@ -222,8 +364,12 @@ export function ChatArea({
                 key={index}
                 className="flex items-center gap-2 rounded-lg bg-card border border-border px-3 py-1.5"
               >
-                <FileText className="h-4 w-4 text-primary" />
-                <span className="text-sm text-foreground">{file.name}</span>
+                {file.type.startsWith("image/") ? (
+                  <ImageIcon className="h-4 w-4 text-primary" />
+                ) : (
+                  <FileText className="h-4 w-4 text-primary" />
+                )}
+                <span className="text-sm text-foreground max-w-[150px] truncate">{file.name}</span>
                 <button
                   onClick={() => removeAttachment(index)}
                   className="rounded-full p-0.5 hover:bg-muted"
@@ -250,6 +396,7 @@ export function ChatArea({
               size="icon"
               className="absolute left-2 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               onClick={() => fileInputRef.current?.click()}
+              disabled={isSending}
             >
               <Paperclip className="h-5 w-5" />
             </Button>
@@ -258,6 +405,7 @@ export function ChatArea({
               onChange={(e) => setInputValue(e.target.value)}
               placeholder={`Message #${channel.name}`}
               className="h-11 bg-card border-border pl-12 pr-20 text-foreground placeholder:text-muted-foreground"
+              disabled={isSending}
             />
             <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
               <Button
@@ -274,9 +422,13 @@ export function ChatArea({
             type="submit"
             size="icon"
             className="h-11 w-11 bg-primary text-primary-foreground hover:bg-accent"
-            disabled={!inputValue.trim() && attachments.length === 0}
+            disabled={isSending || (!inputValue.trim() && attachments.length === 0)}
           >
-            <Send className="h-5 w-5" />
+            {isSending ? (
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Send className="h-5 w-5" />
+            )}
           </Button>
         </form>
       </div>
