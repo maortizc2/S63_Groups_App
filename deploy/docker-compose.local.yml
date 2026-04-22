@@ -29,11 +29,11 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      SPRING_PROFILES_ACTIVE: local
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/groupsapp
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: groupsapp1234
       APP_JWT_SECRET: groupsAppSecretKey2026SuperLongAndSecureKeyForJWT
-      APP_JWT_EXPIRATION: 86400000
       APP_UPLOAD_DIR: /tmp/uploads
     ports:
       - "8080:8080"
