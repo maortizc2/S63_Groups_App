@@ -1,9 +1,10 @@
-# Etapa 1: build
+# Etapa 1: build (contexto = raíz del repo)
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
-COPY pom.xml .
+COPY monolito/pom.xml .
 RUN mvn dependency:go-offline -B
-COPY src ./src
+COPY proto/ ../proto/
+COPY monolito/src ./src
 RUN mvn clean package -DskipTests -B
 
 # Etapa 2: runtime

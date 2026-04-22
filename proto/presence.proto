@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package com.groupsapp.presence;
+
+option java_multiple_files = true;
+option java_package = "com.groupsapp.presence.grpc";
+option java_outer_classname = "PresenceProto";
+
+// ═══════════════════════════════════════════════════════════════
+//   Servicio de Presencia (quién está online)
+//   Comunicación interna entre monolito (cliente) y presence-service (servidor).
+// ═══════════════════════════════════════════════════════════════
+service PresenceService {
+
+  // Marca un usuario como online. Lo llama el monolito en login.
+  rpc SetUserOnline (PresenceRequest) returns (PresenceResponse);
+
+  // Marca un usuario como offline. Lo llama el monolito en logout.
+  rpc SetUserOffline (PresenceRequest) returns (PresenceResponse);
+
+  // Consulta el estado actual de un usuario. Lo llama el monolito
+  // antes de crear un MessageStatus para decidir si deliveredAt va ya o queda pendiente.
+  rpc CheckUserPresence (PresenceRequest) returns (PresenceResponse);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//   Mensajes (payloads)
+// ═══════════════════════════════════════════════════════════════
+
+// Payload de entrada: solo el userId basta para las tres operaciones.
+message PresenceRequest {
+  int64 user_id = 1;
+}
+
+// Payload de respuesta: indica si está online, y cuándo fue visto por última vez.
+message PresenceResponse {
+  int64 user_id = 1;
+  bool online = 2;
+  int64 last_seen_unix_millis = 3;  // 0 si nunca se ha visto
+}

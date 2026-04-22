@@ -2,8 +2,12 @@ package com.groupsapp.monolito.service;
 
 import com.groupsapp.monolito.dto.message.MessageDTO;
 import com.groupsapp.monolito.dto.message.SendMessageRequest;
+import com.groupsapp.monolito.grpc.PresenceGrpcClient;    
 import com.groupsapp.monolito.model.*;
 import com.groupsapp.monolito.repository.*;
+import com.groupsapp.presence.grpc.PresenceResponse;      
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,31 +18,37 @@ import java.util.stream.Collectors;
 @Service
 public class MessageService {
 
+    private static final Logger log = LoggerFactory.getLogger(MessageService.class);
+
     private final MessageRepository messageRepository;
     private final MessageStatusRepository messageStatusRepository;
     private final UserRepository userRepository;
     private final ChannelRepository channelRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final FileMetadataRepository fileRepository;
+    private final PresenceGrpcClient presenceClient;
 
     public MessageService(MessageRepository messageRepository,
-                            MessageStatusRepository messageStatusRepository,
-                            UserRepository userRepository,
-                            ChannelRepository channelRepository,
-                            GroupMemberRepository groupMemberRepository,
-                            FileMetadataRepository fileRepository) {
+                          MessageStatusRepository messageStatusRepository,
+                          UserRepository userRepository,
+                          ChannelRepository channelRepository,
+                          GroupMemberRepository groupMemberRepository,
+                          FileMetadataRepository fileRepository,
+                          PresenceGrpcClient presenceClient) {
         this.messageRepository       = messageRepository;
         this.messageStatusRepository = messageStatusRepository;
         this.userRepository          = userRepository;
         this.channelRepository       = channelRepository;
         this.groupMemberRepository   = groupMemberRepository;
         this.fileRepository          = fileRepository;
+        this.presenceClient          = presenceClient;
     }
 
     @Transactional
     public MessageDTO sendMessage(SendMessageRequest request, String senderEmail) {
         User sender = userRepository.findByEmail(senderEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
         Message message = new Message();
         message.setSender(sender);
         message.setType(request.getType());
@@ -71,11 +81,61 @@ public class MessageService {
         }
 
         Message saved = messageRepository.save(message);
-        createMessageStatus(saved);
+        createMessageStatus(saved);   // ← aquí vive la lógica nueva
         return MessageDTO.fromEntity(saved, sender.getId());
     }
 
-    // ── readOnly = false porque markAllAsRead hace un UPDATE ──
+    // ── El método clave: ahora distingue DM de canal ──────────────────────────
+    @Transactional
+    private void createMessageStatus(Message message) {
+        if (message.getChannel() != null) {
+            // Mensaje de canal: N destinatarios, no consultamos presence por cada uno.
+            // deliveredAt queda null — se marca cuando el usuario abre el canal (markAllAsRead).
+            groupMemberRepository.findByGroup(message.getChannel().getGroup()).stream()
+                    .filter(m -> !m.getUser().getId().equals(message.getSender().getId()))
+                    .forEach(m -> {
+                        MessageStatus status = new MessageStatus();
+                        status.setMessage(message);
+                        status.setUser(m.getUser());
+                        // deliveredAt = null intencionalmente
+                        messageStatusRepository.save(status);
+                    });
+
+        } else if (message.getReceiver() != null) {
+            // DM: consultamos presence para saber si entregar al instante
+            MessageStatus status = new MessageStatus();
+            status.setMessage(message);
+            status.setUser(message.getReceiver());
+
+            boolean receiverIsOnline = checkReceiverOnline(message.getReceiver().getId());
+            if (receiverIsOnline) {
+                status.markAsDelivered();   // deliveredAt = ahora
+                log.debug("DM delivered instantly — receiver userId={} is online",
+                          message.getReceiver().getId());
+            } else {
+                log.debug("DM queued for delivery — receiver userId={} is offline",
+                          message.getReceiver().getId());
+                // deliveredAt queda null; un proceso futuro (Día 4 con SQS) lo marcará
+            }
+
+            messageStatusRepository.save(status);
+        }
+    }
+
+    // ── Helper: llama gRPC y absorbe fallos ───────────────────────────────────
+    private boolean checkReceiverOnline(Long userId) {
+        try {
+            PresenceResponse response = presenceClient.checkPresence(userId);
+            return response.getOnline();
+        } catch (Exception e) {
+            // Si el presence-service está caído, asumimos offline (conservador)
+            log.warn("Presence check failed for userId={}, assuming offline: {}", userId, e.getMessage());
+            return false;
+        }
+    }
+
+    // ── El resto no cambia ────────────────────────────────────────────────────
+
     @Transactional
     public List<MessageDTO> getChannelHistory(Long channelId, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
@@ -84,7 +144,6 @@ public class MessageService {
                 .orElseThrow(() -> new RuntimeException("Canal no encontrado"));
         if (!groupMemberRepository.existsByUserAndGroup(user, channel.getGroup()))
             throw new RuntimeException("No tienes acceso a este canal");
-        // Marcar mensajes como leídos (UPDATE — requiere transacción de escritura)
         messageStatusRepository.markAllAsRead(user.getId(), channelId, LocalDateTime.now());
         return messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId)
                 .stream().map(m -> MessageDTO.fromEntity(m, user.getId()))
@@ -107,24 +166,5 @@ public class MessageService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         return messageRepository.countUnreadMessages(channelId, user.getId());
-    }
-
-    @Transactional
-    private void createMessageStatus(Message message) {
-        if (message.getChannel() != null) {
-            groupMemberRepository.findByGroup(message.getChannel().getGroup()).stream()
-                    .filter(m -> !m.getUser().getId().equals(message.getSender().getId()))
-                    .forEach(m -> {
-                        MessageStatus status = new MessageStatus();
-                        status.setMessage(message);
-                        status.setUser(m.getUser());
-                        messageStatusRepository.save(status);
-                    });
-        } else if (message.getReceiver() != null) {
-            MessageStatus status = new MessageStatus();
-            status.setMessage(message);
-            status.setUser(message.getReceiver());
-            messageStatusRepository.save(status);
-        }
     }
 }
