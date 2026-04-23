@@ -10,6 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
+import com.groupsapp.monolito.events.MessageCreatedDomainEvent;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,6 +29,7 @@ public class MessageService {
     private final GroupMemberRepository groupMemberRepository;
     private final FileMetadataRepository fileRepository;
     private final PresenceGrpcClient presenceClient;
+    private final ApplicationEventPublisher eventPublisher;
 
     public MessageService(MessageRepository messageRepository,
                           MessageStatusRepository messageStatusRepository,
@@ -34,7 +37,7 @@ public class MessageService {
                           ChannelRepository channelRepository,
                           GroupMemberRepository groupMemberRepository,
                           FileMetadataRepository fileRepository,
-                          PresenceGrpcClient presenceClient) {
+                          PresenceGrpcClient presenceClient,ApplicationEventPublisher eventPublisher) {
         this.messageRepository       = messageRepository;
         this.messageStatusRepository = messageStatusRepository;
         this.userRepository          = userRepository;
@@ -42,6 +45,7 @@ public class MessageService {
         this.groupMemberRepository   = groupMemberRepository;
         this.fileRepository          = fileRepository;
         this.presenceClient          = presenceClient;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -81,7 +85,23 @@ public class MessageService {
         }
 
         Message saved = messageRepository.save(message);
-        createMessageStatus(saved);   // ← aquí vive la lógica nueva
+        createMessageStatus(saved);
+
+        // ── Publicar evento de dominio ────────────────────────
+        // Este evento se procesará POST-COMMIT de la transacción actual.
+        String contentPreview = saved.getContent() != null && saved.getContent().length() > 100
+                ? saved.getContent().substring(0, 100) + "..."
+                : saved.getContent();
+
+        eventPublisher.publishEvent(new MessageCreatedDomainEvent(
+                saved.getId(),
+                sender.getId(),
+                sender.getUsername(),
+                saved.getReceiver() != null ? saved.getReceiver().getId() : null,
+                saved.getChannel() != null ? saved.getChannel().getId() : null,
+                contentPreview
+        ));
+
         return MessageDTO.fromEntity(saved, sender.getId());
     }
 
