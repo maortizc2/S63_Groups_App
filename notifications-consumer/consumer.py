@@ -21,7 +21,7 @@ from botocore.exceptions import ClientError
 
 
 # ─── Configuración por variables de entorno ──────────────────────
-SQS_ENDPOINT  = os.getenv("SQS_ENDPOINT", "http://localstack:4566")
+SQS_ENDPOINT  = os.getenv("SQS_ENDPOINT","")
 SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL", "http://localstack:4566/000000000000/groupsapp-events")
 AWS_REGION    = os.getenv("AWS_REGION", "us-east-1")
 WAIT_TIME_SEC = int(os.getenv("SQS_WAIT_TIME_SECONDS", "10"))

@@ -147,111 +147,19 @@ S63_Groups_App/
 - `FileController.uploadFile` corregido con `consumes = MediaType.MULTIPART_FORM_DATA_VALUE`.
 - Tests manuales: upload y download de archivos funcionando perfectamente.
 
-### Día 3 ⏸️ EN PROGRESO — build del presence-service en curso
 
-Caso de uso gRPC: antes de enviar un DM, el monolito consulta al presence-service si el receptor está online. Si está online → MessageStatus.deliveredAt = ahora. Si está offline → deliveredAt = null (entrega diferida, se conectará con SQS en Día 4).
-Para mensajes de canal no se consulta presence (N destinatarios = N llamadas bloqueantes, no viable).
-Archivos completados y corregidos:
-
-AuthService.java — logger declarado, import de paquete corregido (com.groupsapp.monolito.grpc).
-PresenceGrpcClient.java — paquete corregido a com.groupsapp.monolito.grpc (era groupsApp con A mayúscula).
-MessageService.java — createMessageStatus divide lógica canal vs DM; helper checkReceiverOnline con try/catch (asume offline si presence-service está caído).
-PresenceServiceGrpcImpl.java — sin cambios, ya estaba correcto.
-presence-service/Dockerfile — NUEVO, contexto de build desde raíz del repo para acceder a proto/.
-presence-service/pom.xml — añadidas dependencias: spring-boot-starter-web, spring-boot-starter-actuator, javax.annotation-api:1.3.2.
-deploy/docker-compose.local.yml — añadido servicio presence-service con healthcheck en puerto 8081, gRPC en 9090; monolito con depends_on: presence-service: condition: service_healthy; variables GRPC_CLIENT_PRESENCE_SERVICE_ADDRESS y GRPC_CLIENT_PRESENCE_SERVICE_NEGOTIATION_TYPE.
-
-
-Pendiente: resolver error de build → añadir javax.annotation-api:1.3.2 al pom.xml y volver a buildear.
-Pendiente: pruebas funcionales (Prueba A login/logout, Prueba B DM offline, Prueba C DM online).
-
-docker-compose.local.yml actual (completo)
-yamlversion: '3.8'
-
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: groupsapp-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: groupsapp
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: groupsapp1234
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - groupsapp-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  presence-service:
-    build:
-      context: ..
-      dockerfile: presence-service/Dockerfile
-    image: groupsapp-presence:dev
-    container_name: groupsapp-presence
-    restart: unless-stopped
-    ports:
-      - "8081:8081"
-      - "9090:9090"
-    networks:
-      - groupsapp-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  monolito:
-    image: groupsapp-monolito:dev
-    container_name: groupsapp-monolito
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      presence-service:
-        condition: service_healthy
-    environment:
-      SPRING_PROFILES_ACTIVE: local
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/groupsapp
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: groupsapp1234
-      APP_JWT_SECRET: groupsAppSecretKey2026SuperLongAndSecureKeyForJWT
-      APP_UPLOAD_DIR: /tmp/uploads
-      GRPC_CLIENT_PRESENCE_SERVICE_ADDRESS: static://presence-service:9090
-      GRPC_CLIENT_PRESENCE_SERVICE_NEGOTIATION_TYPE: plaintext
-    ports:
-      - "8080:8080"
-    networks:
-      - groupsapp-network
-
-volumes:
-  postgres_data:
-
-networks:
-  groupsapp-network:
-    driver: bridge
-
-
-## Plan pendiente
-
-### Día 3 — Presence Service (gRPC)
+### Día 3 — Presence Service (gRPC) ✅
 - Prueba A: register + login → verificar log gRPC setUserOnline called for userId=...
 - Prueba B: DM a usuario offline → delivered_at debe ser null en BD
 - Prueba C: DM a usuario online → delivered_at debe tener timestamp
 - Verificar BD: docker exec -it groupsapp-db psql -U postgres -d groupsapp -c "SELECT * FROM message_status;"
 
-### Día 4 — MOM con SQS
+### Día 4 — MOM con SQS ✅
 - Solo 1 cola (decisión tomada por simplicidad).
 - Crear notifications-consumer en Python.
 - Integrar publicación a SQS en `MessageService` (después de guardar mensaje).
 
-### Día 5 — Provisión AWS
+### Día 5 — Provisión AWS ✅
 - EC2 t3.small con Elastic IP.
 - RDS db.t3.micro single-AZ.
 - ECR con repos por imagen.
@@ -259,9 +167,11 @@ networks:
 - Security groups correctos.
 - CRÍTICO: no asignar rol IAM manualmente, usar el que viene (LabRole).
 
-### Día 6 — Despliegue
+### Día 6 — Despliegue ✅
 - Push imágenes a ECR.
 - `docker-compose.prod.yml` en EC2.
+
+### PENDIENTE 
 - Nginx como reverse proxy.
 - Archivo `.env` con credenciales (NO commitear).
 
@@ -289,6 +199,7 @@ networks:
 4. **Java en todo**, poliglotismo solo en el notifications-consumer (Python, Día 4).
 5. **Estrategia Strategy** para FileStorage, explicable en informe y video.
 6. **HTTPS opcional**, HTTP si hay tiempo ajustado.
+7. **Despliegue**, Build local + push a ECR + pull desde EC2
 
 ## Valores importantes
 
@@ -297,13 +208,18 @@ networks:
 - Región: `us-east-1`
 - DB local password (solo desarrollo): `groupsapp1234`
 - JWT secret local: `groupsAppSecretKey2026SuperLongAndSecureKeyForJWT`
+- IP_elastic: 100.50.74.221
+- RDS: Port: 5432.
+      DB name: groupsapp.
+      Username: postgres.
+      endpoint: database-1.cxs22yqyuuxq.us-east-1.rds.amazonaws.com
 
 ## Convenciones del equipo
 
 - **Persona A**: Documentacion.
 - **Persona B**: infraestructura, Docker, configuración.
 - Pair programming en decisiones arquitectónicas importantes.
-- Commits frecuentes en rama `dev`, merge a `main` al final del día.
+- Commits frecuentes en rama `release/deployment-config`, merge a `main` al final del día.
 - Al final de cada día: push a GitHub.
 
 ## Tono del profesor virtual
@@ -329,7 +245,7 @@ networks:
 **Instrucciones para Claude en nueva conversación**:
 
 1. Lee este archivo completo antes de responder.
-2. El siguiente paso es terminar las tareas pendientes del dia 3.
+2. El siguiente paso es terminar las tareas pendientes del dia 6.
 3. Mantén el estilo de explicación: didáctico, paso a paso, explicando decisiones.
 4. La usuaria es la Persona B del equipo, está aprendiendo patrones de diseño y arquitectura distribuida.
 5. No asumas que conoces detalles; si no están aquí, pregunta.
