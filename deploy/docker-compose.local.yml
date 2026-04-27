@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: groupsapp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: groupsapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: groupsapp1234
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - groupsapp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  presence-service:
+    build:
+      context: ..
+      dockerfile: presence-service/Dockerfile
+    image: groupsapp-presence:dev
+    container_name: groupsapp-presence
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+      - "9090:9090"
+    networks:
+      - groupsapp-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8081/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # LocalStack - emula servicios de AWS localmente (SQS en nuestro caso)
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: groupsapp-localstack
+    restart: unless-stopped
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs
+      DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      DEBUG: "0"
+    volumes:
+      - ./localstack-init:/etc/localstack/init/ready.d
+    networks:
+      - groupsapp-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:4566/_localstack/health | grep -q 'sqs.*running' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  monolito:
+    image: groupsapp-monolito:dev
+    container_name: groupsapp-monolito
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      presence-service:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/groupsapp
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: groupsapp1234
+      APP_JWT_SECRET: groupsAppSecretKey2026SuperLongAndSecureKeyForJWT
+      APP_UPLOAD_DIR: /tmp/uploads
+      GRPC_CLIENT_PRESENCE_SERVICE_ADDRESS: static://presence-service:9090
+      GRPC_CLIENT_PRESENCE_SERVICE_NEGOTIATION_TYPE: plaintext
+      # ── AWS SQS (apuntando a LocalStack) ───────────────────────────────
+      APP_SQS_QUEUE_URL: http://localstack:4566/000000000000/groupsapp-events
+      APP_SQS_ENDPOINT: http://localstack:4566
+      APP_SQS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    ports:
+      - "8080:8080"
+    networks:
+      - groupsapp-network
+
+  notifications-consumer:
+      build:
+        context: ..
+        dockerfile: notifications-consumer/Dockerfile
+      image: groupsapp-notifications-consumer:dev
+      container_name: groupsapp-notifications-consumer
+      restart: unless-stopped
+      depends_on:
+        localstack:
+          condition: service_healthy
+      environment:
+        SQS_ENDPOINT: http://localstack:4566
+        SQS_QUEUE_URL: http://localstack:4566/000000000000/groupsapp-events
+        AWS_REGION: us-east-1
+        AWS_ACCESS_KEY_ID: test
+        AWS_SECRET_ACCESS_KEY: test
+        LOG_LEVEL: INFO
+      networks:
+        - groupsapp-network
+
+volumes:
+  postgres_data:
+
+networks:
+  groupsapp-network:
+    driver: bridge
